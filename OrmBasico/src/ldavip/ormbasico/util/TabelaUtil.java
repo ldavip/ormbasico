@@ -1,6 +1,5 @@
 package ldavip.ormbasico.util;
 
-import com.sun.istack.internal.NotNull;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -8,6 +7,7 @@ import java.util.List;
 import ldavip.ormbasico.annotation.AutoIncrement;
 import ldavip.ormbasico.annotation.Coluna;
 import ldavip.ormbasico.annotation.ForeignKey;
+import ldavip.ormbasico.annotation.NotNull;
 import ldavip.ormbasico.annotation.PrimaryKey;
 import ldavip.ormbasico.annotation.Tabela;
 import ldavip.ormbasico.dao.Dao;
@@ -190,6 +190,7 @@ public class TabelaUtil {
     }
 
     public static boolean isNotNull(Field field) {
-        return field.isAnnotationPresent(NotNull.class);
+        return field.isAnnotationPresent(NotNull.class) 
+                || field.isAnnotationPresent(PrimaryKey.class);
     }
 }
