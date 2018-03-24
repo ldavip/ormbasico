@@ -122,13 +122,14 @@ public class TabelaUtil {
     }
 
     public static String[] getNomeCampos(Class<?> classe, Dao.Operacao operacao) {
+        String nomeTabela = getNomeTabela(classe);
         List<String> campos = new ArrayList<>();
         for (Field field : classe.getDeclaredFields()) {
             if (isColuna(field)) {
                 if (isAutoIncrement(field) && (operacao == Dao.Operacao.INSERT || operacao == Dao.Operacao.UPDATE)) {
                     continue;
                 }
-                campos.add(getNomeColuna(field));
+                campos.add(nomeTabela + "." + getNomeColuna(field));
             }
         }
         return campos.toArray(new String[]{});
