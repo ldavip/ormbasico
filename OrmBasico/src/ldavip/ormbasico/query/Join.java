@@ -9,6 +9,7 @@ import ldavip.ormbasico.util.TabelaUtil;
  *
  * @author Luis Davi
  */
+@Deprecated
 public class Join {
     
     private enum Tipo {

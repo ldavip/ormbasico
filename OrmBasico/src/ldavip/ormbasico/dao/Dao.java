@@ -10,9 +10,15 @@ import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import ldavip.ormbasico.query.Criterios;
+import ldavip.ormbasico.query.Operador;
 import ldavip.ormbasico.query.Where;
+import ldavip.ormbasico.util.TabelaUtil;
+import static ldavip.ormbasico.util.TabelaUtil.checaAtributo;
 import static ldavip.ormbasico.util.TabelaUtil.getCampoId;
+import static ldavip.ormbasico.util.TabelaUtil.getCampoIdFk;
 import static ldavip.ormbasico.util.TabelaUtil.getNomeCampoId;
 import static ldavip.ormbasico.util.TabelaUtil.getNomeCampos;
 import static ldavip.ormbasico.util.TabelaUtil.getNomeColuna;
@@ -42,6 +48,15 @@ public abstract class Dao<T> {
     private Operacao operacao;
 
     private final Class<?> classeDaEntidade;
+    private List<Class<?>> classes = new ArrayList<>();
+
+    private StringBuilder query;
+    private StringBuilder join = new StringBuilder();
+    private StringBuilder where = new StringBuilder("\r\n WHERE 1 = 1 ");
+    private StringBuilder orderBy = new StringBuilder();
+    
+    private boolean queryIniciada = false;
+    private boolean orderByInserido = false;
 
     private Dao() {
         this.classeDaEntidade = (Class<T>) ((ParameterizedType) getClass().getGenericSuperclass())
@@ -114,6 +129,157 @@ public abstract class Dao<T> {
         }
     }
 
+    public Dao buscaLista() {
+        this.operacao = Operacao.SELECT;
+        String tabela = getNomeTabela(classeDaEntidade);
+        String[] campos = getNomeCampos(classeDaEntidade, operacao);
+
+        this.query = new StringBuilder();
+        this.query.append("SELECT ");
+        this.query.append(TextoUtil.agrupar(campos, ", "));
+        this.query.append(" FROM ").append(tabela).append(" ");
+
+        queryIniciada = true;
+        return this;
+    }
+
+    public Dao where(Class<?> classe, String atributo, Operador operador, Object... valor) {
+        return and(classe, atributo, operador, valor);
+    }
+
+    public Dao and(Class<?> classe, String atributo, Operador operador, Object... valor) {
+        add("AND", classe, atributo, operador, valor);
+        return this;
+    }
+
+    public Dao or(Class<?> classe, String atributo, Operador operador, Object... valor) {
+        add("OR", classe, atributo, operador, valor);
+        return this;
+    }
+
+    private void add(String op, Class<?> classe, String atributo, Operador operador, Object... valor) {
+        if (orderByInserido) {
+            throw new IllegalStateException("Após order by não deve ser adicionado cláusulas where!");
+        }
+        if (classe != classeDaEntidade && !classes.contains(classe)) {
+            classes.add(classe);
+        }
+        
+        String nomeTabela = getNomeTabela(classe);
+        String nomeColuna = getNomeColuna(classe, atributo);
+        
+        where.append("\r\n ").append(op).append(" ");
+        where.append(nomeTabela).append(".").append(nomeColuna).append(" ");
+        if (null != operador) {
+            switch (operador) {
+                case ENTRE:
+                    if (valor.length != 2) {
+                        throw new IllegalArgumentException("A quantidade de valores esperada era: 2!"
+                                + "\nQuantidade encontrada: " + valor.length);
+                    }
+                    where.append(operador).append(" ")
+                            .append("'").append(valor[0]).append("'")
+                            .append(" AND ")
+                            .append("'").append(valor[1]).append("' ");
+                    break;
+                case CONTEM:
+                case NAO_CONTEM:
+                    String[] str = new String[valor.length];
+                    for (int i = 0; i < valor.length; i++) {
+                        str[i] = "'" + valor[i] + "'";
+                    }
+                    where.append(operador).append(" ")
+                            .append("(")
+                            .append(TextoUtil.agrupar(str, ","))
+                            .append(") ");
+                    break;
+                case SIMILAR:
+                    if (valor.length != 1) {
+                        throw new IllegalArgumentException("A quantidade de valores esperada era: 1!"
+                                + "\nQuantidade encontrada: " + valor.length);
+                    }
+                    where.append(operador).append(" ")
+                            .append("'%")
+                            .append(valor[0])
+                            .append("%' ");
+                    break;
+                default:
+                    if (valor.length != 1) {
+                        throw new IllegalArgumentException("A quantidade de valores esperada era: 1!"
+                                + "\nQuantidade encontrada: " + valor.length);
+                    }
+                    where.append(operador)
+                            .append(" '")
+                            .append(valor[0])
+                            .append("' ");
+                    break;
+            }
+        }
+    }
+    
+    public Dao orderBy(Class<?> classe, String atributo) {
+        checaAtributo(atributo, classe);
+        String nomeColuna = "";
+        try {
+            Field field = classe.getDeclaredField(atributo);
+            nomeColuna = getNomeColuna(field);
+        } catch (NoSuchFieldException | SecurityException ex) {
+            // já verificado -> checaAtributo
+        }
+        String nomeTabela = getNomeTabela(classe);
+        
+        if (orderBy.toString().isEmpty()) {
+            orderBy.append("\r\n ").append("ORDER BY ").append("\r\n ")
+                    .append(nomeTabela).append(".").append(nomeColuna);
+        } else {
+            orderBy.append("\r\n , ")
+                    .append(nomeTabela).append(".").append(nomeColuna);
+        }
+        
+        orderByInserido = true;
+        return this;
+    }
+
+    public List<T> toList() throws Exception {
+        if (!queryIniciada) {
+            throw new IllegalStateException("Busca incompleta!");
+        }
+        
+        checkJoins();
+        this.query.append(join);
+        this.query.append(where);
+        this.query.append(orderBy);
+        
+        return buscaLista(this.query.toString());
+    }
+
+    private void checkJoins() {
+        if (classes.size() > 0) {
+            String nomeTabela = getNomeTabela(classeDaEntidade);
+            for (Class<?> classe : classes) {
+                String campoFk = getCampoIdFk(classeDaEntidade, classe);
+
+                String nomeTabelaFk = getNomeTabela(classe);
+                String campoIdFk = getNomeCampoId(classe);
+
+                join.append("\r\n ").append("LEFT OUTER JOIN ").append(nomeTabelaFk);
+                join.append("\r\n ").append("   ON ")
+                        .append(nomeTabelaFk).append(".").append(campoIdFk)
+                        .append(" = ")
+                        .append(nomeTabela).append(".").append(campoFk);
+
+            }
+        }
+    }
+
+    /**
+     * 
+     * @param criterios
+     * @return
+     * @throws Exception
+     * @deprecated Use o método <code>buscaLista().where(...).toList()</code> ao invés deste.
+     */
+    @Deprecated
     public List<T> buscaListaPorCriterios(Criterios criterios) throws Exception {
         if (criterios == null) {
             throw new Exception("Critérios nulo!");
@@ -137,9 +303,17 @@ public abstract class Dao<T> {
         return buscaLista(sql.toString());
     }
 
+    /**
+     * 
+     * @param where
+     * @return
+     * @throws Exception
+     * @deprecated Use o método <code>buscaLista().where(...).toList()</code> ao invés deste.
+     */
+    @Deprecated
     public List<T> buscaLista(Where where) throws Exception {
         this.operacao = Operacao.SELECT;
-        
+
         String tabela = getNomeTabela(classeDaEntidade);
         String[] campos = getNomeCampos(classeDaEntidade, operacao);
 
@@ -174,7 +348,7 @@ public abstract class Dao<T> {
 
     public T buscaPorId(int id) throws Exception {
         this.operacao = Operacao.SELECT;
-        
+
         String tabela = getNomeTabela(classeDaEntidade);
         String[] campos = getNomeCampos(classeDaEntidade, operacao);
 
@@ -203,12 +377,19 @@ public abstract class Dao<T> {
         return null;
     }
 
+    /**
+     * 
+     * @return
+     * @throws Exception
+     * @deprecated Use o método <code>buscaLista().toList()</code> ao invés deste.
+     */
+    @Deprecated
     public List<T> buscaTodos() throws Exception {
         this.operacao = Operacao.SELECT;
-        
+
         String tabela = getNomeTabela(classeDaEntidade);
         String[] campos = getNomeCampos(classeDaEntidade, operacao);
-        
+
         StringBuilder sql = new StringBuilder();
         sql.append("SELECT ");
         sql.append(TextoUtil.agrupar(campos, ","));
@@ -219,7 +400,7 @@ public abstract class Dao<T> {
 
     public void remove(T obj) throws Exception {
         this.operacao = Operacao.DELETE;
-        
+
         String tabela = getNomeTabela(classeDaEntidade);
 
         StringBuilder sql = new StringBuilder();
@@ -261,7 +442,7 @@ public abstract class Dao<T> {
                         continue;
                     }
                 }
-                
+
                 Object fkObj = null;
                 Class<?> fieldClass = field.getType();
                 Method fieldGetter = objClass.getDeclaredMethod(getNomeGetter(field));
@@ -378,5 +559,4 @@ public abstract class Dao<T> {
         return fieldClass;
     }
 
-    
 }

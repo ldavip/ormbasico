@@ -6,6 +6,7 @@ import ldavip.ormbasico.util.TabelaUtil;
  *
  * @author Luis Davi
  */
+@Deprecated
 public class Expressao {
     
     private String expressao;

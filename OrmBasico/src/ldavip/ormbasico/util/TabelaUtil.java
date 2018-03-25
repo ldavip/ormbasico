@@ -18,7 +18,7 @@ import static ldavip.ormbasico.util.TextoUtil.ajustaCamelCase;
  * @author Luis Davi
  */
 public class TabelaUtil {
-    
+
     public static String getNomeGetter(Field field) {
         StringBuilder getterName = new StringBuilder();
         if (field.getType().getName().toLowerCase().contains("boolean")) {
@@ -37,7 +37,7 @@ public class TabelaUtil {
     public static String getNomeSetter(Class<?> classe) {
         return "set" + ajustaCamelCase(classe.getName());
     }
-    
+
     public static String getNomeColuna(Class<?> classe, String atributo) {
         try {
             if (classe.isAnnotationPresent(Tabela.class)) {
@@ -56,7 +56,7 @@ public class TabelaUtil {
         }
         throw new RuntimeException("Não encontrado atributo: [" + atributo + "] na classe: [" + classe.getName() + "]");
     }
-    
+
     public static String getCampoIdFk(Class<?> classePrincipal, Class<?> classeFk) {
         if (classePrincipal.isAnnotationPresent(Tabela.class) && classeFk.isAnnotationPresent(Tabela.class)) {
             for (Field field : classePrincipal.getDeclaredFields()) {
@@ -76,7 +76,7 @@ public class TabelaUtil {
         }
         throw new RuntimeException("Não foi encontrado um campo com chave estrangeira para: " + classeFk.getName() + " na entidade: " + classePrincipal.getName());
     }
-    
+
     public static String getNomeGetterId(Object obj) {
         Field campoId = getCampoId(obj.getClass());
         String nomeCampo = campoId.getName();
@@ -191,7 +191,16 @@ public class TabelaUtil {
     }
 
     public static boolean isNotNull(Field field) {
-        return field.isAnnotationPresent(NotNull.class) 
+        return field.isAnnotationPresent(NotNull.class)
                 || field.isAnnotationPresent(PrimaryKey.class);
+    }
+
+    public static void checaAtributo(String atributo, Class<?> classe) {
+        try {
+            classe.getDeclaredField(atributo);
+        } catch (NoSuchFieldException | SecurityException e) {
+            throw new IllegalArgumentException("Atributo: " + atributo
+                    + " não encontrado na classe: " + classe.getName());
+        }
     }
 }

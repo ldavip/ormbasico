@@ -4,6 +4,7 @@ package ldavip.ormbasico.query;
  *
  * @author Luis Davi
  */
+@Deprecated
 public class Criterio {
 
     private String criterio;
