@@ -10,12 +10,10 @@ import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import ldavip.ormbasico.query.Criterios;
 import ldavip.ormbasico.query.Operador;
 import ldavip.ormbasico.query.Where;
-import ldavip.ormbasico.util.TabelaUtil;
+import ldavip.ormbasico.util.ClasseUtil;
 import static ldavip.ormbasico.util.TabelaUtil.checaAtributo;
 import static ldavip.ormbasico.util.TabelaUtil.getCampoId;
 import static ldavip.ormbasico.util.TabelaUtil.getCampoIdFk;
@@ -143,7 +141,37 @@ public abstract class Dao<T> {
         return this;
     }
 
+    /**
+     * 
+     * @param classe
+     * @param atributo
+     * @param operador
+     * @param valor
+     * @return
+     * @deprecated Use o método <code>where("nomeClasse.atributo.proximoAtributo", operador, valores)</code>
+     *          ao invés deste.
+     */
+    @Deprecated
     public Dao where(Class<?> classe, String atributo, Operador operador, Object... valor) {
+        return and(classe, atributo, operador, valor);
+    }
+
+    public Dao where(String atributo, Operador operador, Object... valor) {
+        Class[] classesFk = ClasseUtil.buscaClassesFk(atributo);
+        for (Class clazz : classesFk) {
+            if (!classes.contains(clazz)) {
+                classes.add(clazz);
+            }
+        }
+        int indexDoUltimoPonto = atributo.lastIndexOf(".");
+        atributo = atributo.substring(indexDoUltimoPonto + 1);
+        
+        Class classe;
+        if (classesFk.length > 0) {
+            classe = classesFk[classesFk.length - 1];
+        } else {
+            classe = classeDaEntidade;
+        }
         return and(classe, atributo, operador, valor);
     }
 
@@ -256,17 +284,38 @@ public abstract class Dao<T> {
     private void checkJoins() {
         if (classes.size() > 0) {
             String nomeTabela = getNomeTabela(classeDaEntidade);
+            String nomeTabelaAlternativa = "";
+            String campoFkAlternativo = "";
+            boolean campoAlternativo = false;
+            
             for (Class<?> classe : classes) {
                 String campoFk = getCampoIdFk(classeDaEntidade, classe);
-
+                if (campoFk == null) {
+                    for (Class<?> clazz : classes) {
+                        if (getCampoIdFk(clazz, classe) != null) {
+                            campoAlternativo = true;
+                            nomeTabelaAlternativa = getNomeTabela(clazz);
+                            campoFkAlternativo = getCampoIdFk(clazz, classe);
+                            break;
+                        }
+                    }
+                    if (!campoAlternativo) {
+                        throw new IllegalArgumentException("Não foi encontrado o caminho do atributo informado!");
+                    }
+                }
+                    
                 String nomeTabelaFk = getNomeTabela(classe);
                 String campoIdFk = getNomeCampoId(classe);
 
                 join.append("\r\n ").append("LEFT OUTER JOIN ").append(nomeTabelaFk);
                 join.append("\r\n ").append("   ON ")
                         .append(nomeTabelaFk).append(".").append(campoIdFk)
-                        .append(" = ")
-                        .append(nomeTabela).append(".").append(campoFk);
+                        .append(" = ");
+                if (campoAlternativo) {
+                    join.append(nomeTabelaAlternativa).append(".").append(campoFkAlternativo);
+                } else {
+                    join.append(nomeTabela).append(".").append(campoFk);
+                }
 
             }
         }

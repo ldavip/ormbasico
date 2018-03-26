@@ -74,7 +74,8 @@ public class TabelaUtil {
                 }
             }
         }
-        throw new RuntimeException("Não foi encontrado um campo com chave estrangeira para: " + classeFk.getName() + " na entidade: " + classePrincipal.getName());
+        return null;
+//        throw new RuntimeException("Não foi encontrado um campo com chave estrangeira para: " + classeFk.getName() + " na entidade: " + classePrincipal.getName());
     }
 
     public static String getNomeGetterId(Object obj) {
