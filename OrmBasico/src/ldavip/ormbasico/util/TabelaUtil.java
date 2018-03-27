@@ -82,8 +82,7 @@ public class TabelaUtil {
         Field campoId = getCampoId(obj.getClass());
         String nomeCampo = campoId.getName();
         return new StringBuilder("get")
-                .append(nomeCampo.substring(0, 1).toUpperCase())
-                .append(nomeCampo.substring(1))
+                .append(TextoUtil.ajustaCamelCase(nomeCampo))
                 .toString();
     }
 

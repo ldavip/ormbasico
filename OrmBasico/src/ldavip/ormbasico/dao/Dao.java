@@ -10,11 +10,8 @@ import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import ldavip.ormbasico.query.Criterios;
 import ldavip.ormbasico.query.Operador;
-import ldavip.ormbasico.query.Where;
 import ldavip.ormbasico.util.ClasseUtil;
-import static ldavip.ormbasico.util.TabelaUtil.checaAtributo;
 import static ldavip.ormbasico.util.TabelaUtil.getCampoId;
 import static ldavip.ormbasico.util.TabelaUtil.getCampoIdFk;
 import static ldavip.ormbasico.util.TabelaUtil.getNomeCampoId;
@@ -41,6 +38,22 @@ public abstract class Dao<T> {
     public enum Operacao {
         INSERT, SELECT, UPDATE, DELETE
     }
+    
+    public enum Ordem {
+        CRESCENTE, DECRESCENTE;
+
+        @Override
+        public String toString() {
+            switch (ordinal()) {
+                case 0:
+                    return "ASC";
+                case 1:
+                    return "DESC";
+                default:
+                    return null;
+            }
+        }
+    }
 
     private Connection conexao;
     private Operacao operacao;
@@ -55,6 +68,7 @@ public abstract class Dao<T> {
     
     private boolean queryIniciada = false;
     private boolean orderByInserido = false;
+    private boolean direcaoOrderByInserido = false;
 
     private Dao() {
         this.classeDaEntidade = (Class<T>) ((ParameterizedType) getClass().getGenericSuperclass())
@@ -74,25 +88,65 @@ public abstract class Dao<T> {
         String[] parametros = new String[campos.length];
         Arrays.fill(parametros, "?");
 
-        StringBuilder sql = new StringBuilder();
-        sql.append("INSERT INTO ").append(tabela);
-        sql.append(" (");
-        sql.append(TextoUtil.agrupar(campos, ","));
-        sql.append(") ");
-        sql.append("VALUES ");
-        sql.append("(");
-        sql.append(TextoUtil.agrupar(parametros, ","));
-        sql.append(")");
+        StringBuilder sql = new StringBuilder()
+                .append("INSERT INTO ").append(tabela)
+                .append(" (")
+                .append(TextoUtil.agrupar(campos, ","))
+                .append(") ")
+                .append("\r\n ")
+                .append("VALUES ")
+                .append("(")
+                .append(TextoUtil.agrupar(parametros, ","))
+                .append(")");
 
         try (PreparedStatement pst = this.conexao.prepareStatement(sql.toString())) {
             this.conexao.setAutoCommit(false);
             setParameters(pst, obj);
             pst.executeUpdate();
+            
+            setIdObjeto(obj);
+            
             this.conexao.commit();
         } catch (Exception e) {
             this.conexao.rollback();
             e.printStackTrace();
             throw e;
+        }
+    }
+    
+    private void setIdObjeto(T obj) throws Exception {
+        String nomeCampoId = getNomeColuna(getCampoId(classeDaEntidade));
+        StringBuilder sql = new StringBuilder();
+        sql.append("SELECT ").append(nomeCampoId)
+                .append(" FROM ").append(getNomeTabela(classeDaEntidade))
+                .append(" ORDER BY ").append(nomeCampoId).append(" DESC ")
+                .append(" LIMIT 1 ");
+        
+        ResultSet rs = null;
+        try (PreparedStatement pst = this.conexao.prepareStatement(sql.toString())) {
+            
+            rs = pst.executeQuery();
+            int id = 0;
+            if (rs.next()) {
+                id = rs.getInt(getNomeCampoId(classeDaEntidade));
+            }
+            if (id == 0) {
+                throw new Exception("Não foi encontrado o ID do objeto inserido!");
+            }
+            
+            String nomeSetter = getNomeSetter(getCampoId(classeDaEntidade));
+            Class[] parametros = new Class[] {getCampoId(classeDaEntidade).getType()};
+            Method setter = classeDaEntidade.getDeclaredMethod(nomeSetter, parametros);
+            
+            setter.invoke(obj, id);
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw e;
+        } finally {
+            if (rs != null) {
+                rs.close();
+            }
         }
     }
 
@@ -108,7 +162,7 @@ public abstract class Dao<T> {
         sql.append("UPDATE ").append(tabela);
         sql.append(" SET ");
         for (int i = 0; i < campos.length; i++) {
-            sql.append(campos[i]).append(" = ? ");
+            sql.append(campos[i]).append(" = ? ").append("\r\n ");
             if (i < campos.length - 1) {
                 sql.append(",");
             }
@@ -126,6 +180,97 @@ public abstract class Dao<T> {
             throw e;
         }
     }
+    
+    public void remove(T obj) throws Exception {
+        this.operacao = Operacao.DELETE;
+
+        String tabela = getNomeTabela(classeDaEntidade);
+
+        StringBuilder sql = new StringBuilder();
+        sql.append("DELETE FROM ").append(tabela);
+        sql.append(" WHERE ").append(getNomeCampoId(classeDaEntidade)).append(" = ? ");
+
+        try {
+            this.conexao.setAutoCommit(false);
+            PreparedStatement pst = this.conexao.prepareStatement(sql.toString());
+
+            Field campoId = getCampoId(obj.getClass());
+            Class<?> classeId = ajustaTipoClasse(campoId.getType());
+            Method getter = classeDaEntidade.getDeclaredMethod(getNomeGetter(campoId));
+            Class[] parametrosSetter = new Class[]{Integer.TYPE, classeId};
+            Method method = PreparedStatement.class.getDeclaredMethod(getNomeSetter(classeId), parametrosSetter);
+            method.invoke(pst, 1, getter.invoke(obj));
+
+            pst.executeUpdate();
+            this.conexao.commit();
+        } catch (Exception e) {
+            this.conexao.rollback();
+            e.printStackTrace();
+            throw e;
+        }
+    }
+    
+    public T buscaPorId(int id) throws Exception {
+        this.operacao = Operacao.SELECT;
+
+        String tabela = getNomeTabela(classeDaEntidade);
+        String[] campos = getNomeCampos(classeDaEntidade, operacao);
+
+        StringBuilder sql = new StringBuilder();
+        sql.append("SELECT ");
+        sql.append(TextoUtil.agrupar(campos, ","));
+        sql.append(" FROM ").append(tabela);
+        sql.append(" WHERE ").append(getNomeCampoId(classeDaEntidade)).append(" = ? ");
+
+        ResultSet rs = null;
+        try (PreparedStatement pst = this.conexao.prepareStatement(sql.toString())) {
+            pst.setInt(1, id);
+            rs = pst.executeQuery();
+            if (rs.next()) {
+                return populaObjeto(rs);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw e;
+        } finally {
+            if (rs != null) {
+                rs.close();
+            }
+        }
+
+        return null;
+    }
+    
+    public T buscarUltimo() throws Exception {
+        this.operacao = Operacao.SELECT;
+
+        String tabela = getNomeTabela(classeDaEntidade);
+        String[] campos = getNomeCampos(classeDaEntidade, operacao);
+
+        StringBuilder sql = new StringBuilder();
+        sql.append("SELECT ");
+        sql.append(TextoUtil.agrupar(campos, ", "));
+        sql.append(" FROM ").append(tabela);
+        sql.append(" ORDER BY ").append(getNomeCampoId(classeDaEntidade)).append(" DESC ");
+        sql.append(" LIMIT 1 ");
+
+        ResultSet rs = null;
+        try (PreparedStatement pst = this.conexao.prepareStatement(sql.toString())) {
+            rs = pst.executeQuery();
+            if (rs.next()) {
+                return populaObjeto(rs);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw e;
+        } finally {
+            if (rs != null) {
+                rs.close();
+            }
+        }
+
+        return null;
+    }
 
     public Dao buscaLista() {
         this.operacao = Operacao.SELECT;
@@ -135,52 +280,59 @@ public abstract class Dao<T> {
         this.query = new StringBuilder();
         this.query.append("SELECT ");
         this.query.append(TextoUtil.agrupar(campos, ", "));
-        this.query.append(" FROM ").append(tabela).append(" ");
+        this.query.append("\r\n").append(" FROM ").append(tabela).append(" ");
 
         queryIniciada = true;
         return this;
     }
-
-    /**
-     * 
-     * @param classe
-     * @param atributo
-     * @param operador
-     * @param valor
-     * @return
-     * @deprecated Use o método <code>where("nomeClasse.atributo.proximoAtributo", operador, valores)</code>
-     *          ao invés deste.
-     */
-    @Deprecated
-    public Dao where(Class<?> classe, String atributo, Operador operador, Object... valor) {
-        return and(classe, atributo, operador, valor);
-    }
-
+    
     public Dao where(String atributo, Operador operador, Object... valor) {
+        return and(atributo, operador, valor);
+    }
+    
+    public Dao and(String atributo, Operador operador, Object... valor) {
+        return and(getClasseDoAtributo(atributo), buscarNomeDoAtributo(atributo), operador, valor);
+    }
+    
+    public Dao or(String atributo, Operador operador, Object... valor) {
+        return or(getClasseDoAtributo(atributo), buscarNomeDoAtributo(atributo), operador, valor);
+    }
+    
+    private Class getClasseDoAtributo(String atributo) {
         Class[] classesFk = ClasseUtil.buscaClassesFk(atributo);
-        for (Class clazz : classesFk) {
-            if (!classes.contains(clazz)) {
-                classes.add(clazz);
-            }
-        }
-        int indexDoUltimoPonto = atributo.lastIndexOf(".");
-        atributo = atributo.substring(indexDoUltimoPonto + 1);
-        
+        adicionarClassesFk(classesFk);
+
         Class classe;
         if (classesFk.length > 0) {
             classe = classesFk[classesFk.length - 1];
         } else {
             classe = classeDaEntidade;
         }
-        return and(classe, atributo, operador, valor);
+        return classe;
     }
 
-    public Dao and(Class<?> classe, String atributo, Operador operador, Object... valor) {
+    private String buscarNomeDoAtributo(String atributo) {
+        int indexDoUltimoPonto = atributo.lastIndexOf(".");
+        if (indexDoUltimoPonto != -1) {
+            atributo = atributo.substring(indexDoUltimoPonto + 1);
+        }
+        return atributo;
+    }
+
+    private void adicionarClassesFk(Class[] classesFk) {
+        for (Class clazz : classesFk) {
+            if (!classes.contains(clazz)) {
+                classes.add(clazz);
+            }
+        }
+    }
+
+    private Dao and(Class<?> classe, String atributo, Operador operador, Object... valor) {
         add("AND", classe, atributo, operador, valor);
         return this;
     }
 
-    public Dao or(Class<?> classe, String atributo, Operador operador, Object... valor) {
+    private Dao or(Class<?> classe, String atributo, Operador operador, Object... valor) {
         add("OR", classe, atributo, operador, valor);
         return this;
     }
@@ -245,32 +397,53 @@ public abstract class Dao<T> {
         }
     }
     
-    public Dao orderBy(Class<?> classe, String atributo) {
-        checaAtributo(atributo, classe);
-        String nomeColuna = "";
-        try {
-            Field field = classe.getDeclaredField(atributo);
-            nomeColuna = getNomeColuna(field);
-        } catch (NoSuchFieldException | SecurityException ex) {
-            // já verificado -> checaAtributo
-        }
-        String nomeTabela = getNomeTabela(classe);
+    public Dao ordenarPor(String... atributos) {
+        String campos = TextoUtil.agrupar(ClasseUtil.buscaCampos(atributos), ", ");
         
         if (orderBy.toString().isEmpty()) {
-            orderBy.append("\r\n ").append("ORDER BY ").append("\r\n ")
-                    .append(nomeTabela).append(".").append(nomeColuna);
+            orderBy.append("\r\n ").append("ORDER BY ").append(" ").append(campos);
         } else {
-            orderBy.append("\r\n , ")
-                    .append(nomeTabela).append(".").append(nomeColuna);
+            orderBy.append(", ").append(campos);
         }
+        
+        Class[] classesFk = ClasseUtil.buscaClassesFk(atributos);
+        adicionarClassesFk(classesFk);
         
         orderByInserido = true;
         return this;
     }
+    
+    public Dao crescente() {
+        validarDirecao();
+        adicionarDirecaoOrderBy("ASC");
+        direcaoOrderByInserido = true;
+        return this;
+    }
+    
+    public Dao decrescente() {
+        validarDirecao();
+        adicionarDirecaoOrderBy("DESC");
+        direcaoOrderByInserido = true;
+        return this;
+    }
+    
+    private void validarDirecao() {
+        if (orderByInserido) {
+            if (direcaoOrderByInserido) {
+                throw new IllegalStateException("A direção da ordenação já foi especificada!");
+            }
+        } else {
+            throw new IllegalStateException("Não foram especifidados atributos para a ordenação!");
+        }
+    }
+    
+    private void adicionarDirecaoOrderBy(String direcao) {
+        orderBy.append(" ").append(direcao).append(" ");
+    }
 
     public List<T> toList() throws Exception {
         if (!queryIniciada) {
-            throw new IllegalStateException("Busca incompleta!");
+            throw new IllegalStateException("Busca incompleta! [O método: buscaLista() não foi utilizado!]");
         }
         
         checkJoins();
@@ -321,60 +494,6 @@ public abstract class Dao<T> {
         }
     }
 
-    /**
-     * 
-     * @param criterios
-     * @return
-     * @throws Exception
-     * @deprecated Use o método <code>buscaLista().where(...).toList()</code> ao invés deste.
-     */
-    @Deprecated
-    public List<T> buscaListaPorCriterios(Criterios criterios) throws Exception {
-        if (criterios == null) {
-            throw new Exception("Critérios nulo!");
-        }
-
-        this.operacao = Operacao.SELECT;
-        String tabela = getNomeTabela(classeDaEntidade);
-        String[] campos = getNomeCampos(classeDaEntidade, operacao);
-
-        StringBuilder sql = new StringBuilder();
-        sql.append("SELECT ");
-        sql.append(TextoUtil.agrupar(campos, ","));
-        sql.append(" FROM ").append(tabela);
-        if (criterios.getJoin() != null) {
-            sql.append(criterios.getJoin().getJoins());
-        }
-        if (criterios.getWhere() != null) {
-            sql.append(criterios.getWhere().getClausulasWhere());
-        }
-
-        return buscaLista(sql.toString());
-    }
-
-    /**
-     * 
-     * @param where
-     * @return
-     * @throws Exception
-     * @deprecated Use o método <code>buscaLista().where(...).toList()</code> ao invés deste.
-     */
-    @Deprecated
-    public List<T> buscaLista(Where where) throws Exception {
-        this.operacao = Operacao.SELECT;
-
-        String tabela = getNomeTabela(classeDaEntidade);
-        String[] campos = getNomeCampos(classeDaEntidade, operacao);
-
-        StringBuilder sql = new StringBuilder();
-        sql.append("SELECT ");
-        sql.append(TextoUtil.agrupar(campos, ","));
-        sql.append(" FROM ").append(tabela);
-        sql.append(where.getClausulasWhere());
-
-        return buscaLista(sql.toString());
-    }
-
     private List<T> buscaLista(String sql) throws Exception {
         List<T> lista = new ArrayList<>();
         ResultSet rs = null;
@@ -393,87 +512,6 @@ public abstract class Dao<T> {
         }
 
         return lista;
-    }
-
-    public T buscaPorId(int id) throws Exception {
-        this.operacao = Operacao.SELECT;
-
-        String tabela = getNomeTabela(classeDaEntidade);
-        String[] campos = getNomeCampos(classeDaEntidade, operacao);
-
-        StringBuilder sql = new StringBuilder();
-        sql.append("SELECT ");
-        sql.append(TextoUtil.agrupar(campos, ","));
-        sql.append(" FROM ").append(tabela);
-        sql.append(" WHERE ").append(getNomeCampoId(classeDaEntidade)).append(" = ? ");
-
-        ResultSet rs = null;
-        try (PreparedStatement pst = this.conexao.prepareStatement(sql.toString())) {
-            pst.setInt(1, id);
-            rs = pst.executeQuery();
-            if (rs.next()) {
-                return populaObjeto(rs);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-            throw e;
-        } finally {
-            if (rs != null) {
-                rs.close();
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * 
-     * @return
-     * @throws Exception
-     * @deprecated Use o método <code>buscaLista().toList()</code> ao invés deste.
-     */
-    @Deprecated
-    public List<T> buscaTodos() throws Exception {
-        this.operacao = Operacao.SELECT;
-
-        String tabela = getNomeTabela(classeDaEntidade);
-        String[] campos = getNomeCampos(classeDaEntidade, operacao);
-
-        StringBuilder sql = new StringBuilder();
-        sql.append("SELECT ");
-        sql.append(TextoUtil.agrupar(campos, ","));
-        sql.append(" FROM ").append(tabela);
-
-        return buscaLista(sql.toString());
-    }
-
-    public void remove(T obj) throws Exception {
-        this.operacao = Operacao.DELETE;
-
-        String tabela = getNomeTabela(classeDaEntidade);
-
-        StringBuilder sql = new StringBuilder();
-        sql.append("DELETE FROM ").append(tabela);
-        sql.append(" WHERE ").append(getNomeCampoId(classeDaEntidade)).append(" = ? ");
-
-        try {
-            this.conexao.setAutoCommit(false);
-            PreparedStatement pst = this.conexao.prepareStatement(sql.toString());
-
-            Field campoId = getCampoId(obj.getClass());
-            Class<?> classeId = ajustaTipoClasse(campoId.getType());
-            Method getter = classeDaEntidade.getDeclaredMethod(getNomeGetter(campoId));
-            Class[] parametrosSetter = new Class[]{Integer.TYPE, classeId};
-            Method method = PreparedStatement.class.getDeclaredMethod(getNomeSetter(classeId), parametrosSetter);
-            method.invoke(pst, 1, getter.invoke(obj));
-
-            pst.executeUpdate();
-            this.conexao.commit();
-        } catch (Exception e) {
-            this.conexao.rollback();
-            e.printStackTrace();
-            throw e;
-        }
     }
 
     private void setParameters(PreparedStatement pst, T obj) throws Exception {
@@ -506,10 +544,7 @@ public abstract class Dao<T> {
                 fieldClass = ajustaTipoClasse(fieldClass);
                 Class[] parametrosSetter = new Class[]{Integer.TYPE, fieldClass};
 
-                String nomeClasse = ajustaCamelCase(fieldClass.getName());
-                if (nomeClasse.contains(".")) {
-                    nomeClasse = nomeClasse.substring(nomeClasse.lastIndexOf(".") + 1);
-                }
+                String nomeClasse = ClasseUtil.getNomeClasse(fieldClass);
                 if (nomeClasse.equals("Integer")) {
                     nomeClasse = "Int";
                 }
