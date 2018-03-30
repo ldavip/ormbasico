@@ -138,7 +138,7 @@ public abstract class Dao<T> {
             rs = pst.executeQuery();
             Object id = null;
             Class tipoCampo = ajustaTipoClasse(campoAutoIncrement.getType());
-            Method getter = ResultSet.class.getDeclaredMethod(getNomeGetter(tipoCampo), new Class[]{tipoCampo});
+            Method getter = ResultSet.class.getDeclaredMethod(getNomeGetter(tipoCampo), new Class[]{ String.class });
             if (rs.next()) {
                 id = getter.invoke(rs, nomeCampoAutoIncrement);
             }
