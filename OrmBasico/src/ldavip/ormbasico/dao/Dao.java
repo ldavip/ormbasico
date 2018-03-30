@@ -2,6 +2,7 @@ package ldavip.ormbasico.dao;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.sql.Connection;
@@ -12,10 +13,10 @@ import java.util.Arrays;
 import java.util.List;
 import ldavip.ormbasico.query.Operador;
 import ldavip.ormbasico.util.ClasseUtil;
+import ldavip.ormbasico.util.TabelaUtil;
 import static ldavip.ormbasico.util.TabelaUtil.getCampoId;
 import static ldavip.ormbasico.util.TabelaUtil.getCampoIdFk;
 import static ldavip.ormbasico.util.TabelaUtil.getNomeCampoId;
-import static ldavip.ormbasico.util.TabelaUtil.getNomeCampos;
 import static ldavip.ormbasico.util.TabelaUtil.getNomeColuna;
 import static ldavip.ormbasico.util.TabelaUtil.getNomeGetter;
 import static ldavip.ormbasico.util.TabelaUtil.getNomeGetterId;
@@ -28,6 +29,8 @@ import static ldavip.ormbasico.util.TabelaUtil.isForeignKey;
 import static ldavip.ormbasico.util.TabelaUtil.isNotNull;
 import ldavip.ormbasico.util.TextoUtil;
 import static ldavip.ormbasico.util.TextoUtil.ajustaCamelCase;
+import static ldavip.ormbasico.util.TabelaUtil.getNomeCamposInsert;
+import static ldavip.ormbasico.util.TabelaUtil.getNomeCampos;
 
 /**
  *
@@ -84,22 +87,23 @@ public abstract class Dao<T> {
         this.operacao = Operacao.INSERT;
 
         String tabela = getNomeTabela(classeDaEntidade);
-        String[] campos = getNomeCampos(obj, operacao);
+        String[] campos = getNomeCamposInsert(obj, operacao);
         String[] parametros = new String[campos.length];
         Arrays.fill(parametros, "?");
 
-        StringBuilder sql = new StringBuilder()
+        String sql = new StringBuilder()
                 .append("INSERT INTO ").append(tabela)
                 .append(" (")
-                .append(TextoUtil.agrupar(campos, ","))
+                .append(TextoUtil.agrupar(campos, ", "))
                 .append(") ")
                 .append("\r\n ")
                 .append("VALUES ")
                 .append("(")
-                .append(TextoUtil.agrupar(parametros, ","))
-                .append(")");
+                .append(TextoUtil.agrupar(parametros, ", "))
+                .append(")")
+                .toString();
 
-        try (PreparedStatement pst = this.conexao.prepareStatement(sql.toString())) {
+        try (PreparedStatement pst = this.conexao.prepareStatement(sql)) {
             this.conexao.setAutoCommit(false);
             setParameters(pst, obj);
             pst.executeUpdate();
@@ -115,27 +119,35 @@ public abstract class Dao<T> {
     }
     
     private void setIdObjeto(T obj) throws Exception {
-        String nomeCampoId = getNomeColuna(getCampoId(classeDaEntidade));
+        Field campoAutoIncrement = TabelaUtil.getCampoAutoIncrement(obj.getClass());
+        
+        if (campoAutoIncrement == null) {
+            return;
+        }
+        
+        String nomeCampoAutoIncrement = getNomeColuna(campoAutoIncrement);
         StringBuilder sql = new StringBuilder();
-        sql.append("SELECT ").append(nomeCampoId)
+        sql.append("SELECT ").append(nomeCampoAutoIncrement)
                 .append(" FROM ").append(getNomeTabela(classeDaEntidade))
-                .append(" ORDER BY ").append(nomeCampoId).append(" DESC ")
+                .append(" ORDER BY ").append(nomeCampoAutoIncrement).append(" DESC ")
                 .append(" LIMIT 1 ");
         
         ResultSet rs = null;
         try (PreparedStatement pst = this.conexao.prepareStatement(sql.toString())) {
             
             rs = pst.executeQuery();
-            int id = 0;
+            Object id = null;
+            Class tipoCampo = ajustaTipoClasse(campoAutoIncrement.getType());
+            Method getter = ResultSet.class.getDeclaredMethod(getNomeGetter(tipoCampo), new Class[]{tipoCampo});
             if (rs.next()) {
-                id = rs.getInt(getNomeCampoId(classeDaEntidade));
+                id = getter.invoke(rs, nomeCampoAutoIncrement);
             }
-            if (id == 0) {
+            if (id == null) {
                 throw new Exception("Não foi encontrado o ID do objeto inserido!");
             }
             
-            String nomeSetter = getNomeSetter(getCampoId(classeDaEntidade));
-            Class[] parametros = new Class[] {getCampoId(classeDaEntidade).getType()};
+            String nomeSetter = getNomeSetter(campoAutoIncrement);
+            Class[] parametros = new Class[] {campoAutoIncrement.getType()};
             Method setter = classeDaEntidade.getDeclaredMethod(nomeSetter, parametros);
             
             setter.invoke(obj, id);
@@ -164,10 +176,17 @@ public abstract class Dao<T> {
         for (int i = 0; i < campos.length; i++) {
             sql.append(campos[i]).append(" = ? ").append("\r\n ");
             if (i < campos.length - 1) {
-                sql.append(",");
+                sql.append(", ");
             }
         }
-        sql.append(" WHERE ").append(getNomeCampoId(classeDaEntidade)).append(" = ? ");
+        sql.append(" WHERE ");
+        String[] nomesCamposPk = TabelaUtil.getNomesCamposId(classeDaEntidade);
+        for (int i = 0; i < nomesCamposPk.length; i++) {
+            sql.append(nomesCamposPk[i]).append(" = ? ");
+            if (i < nomesCamposPk.length - 1) {
+                sql.append("\r\n ").append(" AND ");
+            }
+        }
 
         try (PreparedStatement pst = this.conexao.prepareStatement(sql.toString())) {
             this.conexao.setAutoCommit(false);
@@ -188,18 +207,20 @@ public abstract class Dao<T> {
 
         StringBuilder sql = new StringBuilder();
         sql.append("DELETE FROM ").append(tabela);
-        sql.append(" WHERE ").append(getNomeCampoId(classeDaEntidade)).append(" = ? ");
+        sql.append(" WHERE ");
+        String[] nomesCamposPk = TabelaUtil.getNomesCamposId(classeDaEntidade);
+        for (int i = 0; i < nomesCamposPk.length; i++) {
+            sql.append(nomesCamposPk[i]).append(" = ? ");
+            if (i < nomesCamposPk.length - 1) {
+                sql.append("\r\n ").append(" AND ");
+            }
+        }
 
         try {
             this.conexao.setAutoCommit(false);
             PreparedStatement pst = this.conexao.prepareStatement(sql.toString());
 
-            Field campoId = getCampoId(obj.getClass());
-            Class<?> classeId = ajustaTipoClasse(campoId.getType());
-            Method getter = classeDaEntidade.getDeclaredMethod(getNomeGetter(campoId));
-            Class[] parametrosSetter = new Class[]{Integer.TYPE, classeId};
-            Method method = PreparedStatement.class.getDeclaredMethod(getNomeSetter(classeId), parametrosSetter);
-            method.invoke(pst, 1, getter.invoke(obj));
+            setParameters(pst, obj);
 
             pst.executeUpdate();
             this.conexao.commit();
@@ -443,7 +464,7 @@ public abstract class Dao<T> {
 
     public List<T> toList() throws Exception {
         if (!queryIniciada) {
-            throw new IllegalStateException("Busca incompleta! [O método: buscaLista() não foi utilizado!]");
+            throw new Exception("Busca incompleta! [O método: buscaLista() não foi utilizado!]");
         }
         
         checkJoins();
@@ -515,65 +536,69 @@ public abstract class Dao<T> {
     }
 
     private void setParameters(PreparedStatement pst, T obj) throws Exception {
-        Class<?> objClass = obj.getClass();
-        int cont = 0;
-        for (Field field : objClass.getDeclaredFields()) {
-            if (isColuna(field)) {
-                if (isAutoIncrement(field) && (operacao == Operacao.INSERT || operacao == Operacao.UPDATE)) {
-                    continue;
-                }
-                if (isCampoNulo(field, obj)) {
-                    if (isNotNull(field)) {
-                        throw new Exception("Campo nulo: [" + field.getName() + "]");
-                    } else {
+        List<Field> camposPk = Arrays.asList(TabelaUtil.getCamposId(obj.getClass()));
+        if (operacao == Operacao.DELETE) {
+            int cont = 0;
+            for (Field field : camposPk) {
+                setParameter(field, obj, pst, ++cont);
+            }
+        }
+        else {
+            int cont = 0;
+            for (Field field : obj.getClass().getDeclaredFields()) {
+                if (isColuna(field)) {
+                    if (isAutoIncrement(field) && (operacao == Operacao.INSERT || operacao == Operacao.UPDATE)) {
                         continue;
                     }
-                }
-
-                Object fkObj = null;
-                Class<?> fieldClass = field.getType();
-                Method fieldGetter = objClass.getDeclaredMethod(getNomeGetter(field));
-
-                if (isForeignKey(field)) {
-                    fkObj = fieldGetter.invoke(obj);
-                    Method getFkId = fkObj.getClass().getDeclaredMethod(getNomeGetterId(fkObj));
-                    fieldClass = getFkId.invoke(fkObj).getClass();
-                    fieldGetter = getFkId;
-                }
-
-                fieldClass = ajustaTipoClasse(fieldClass);
-                Class[] parametrosSetter = new Class[]{Integer.TYPE, fieldClass};
-
-                String nomeClasse = ClasseUtil.getNomeClasse(fieldClass);
-                if (nomeClasse.equals("Integer")) {
-                    nomeClasse = "Int";
-                }
-                String setterName = "set" + nomeClasse;
-                Method method = PreparedStatement.class.getDeclaredMethod(setterName, parametrosSetter);
-
-                if (isForeignKey(field)) {
-                    method.invoke(pst, ++cont, fieldGetter.invoke(fkObj));
-                } else {
-                    if (fieldClass == java.sql.Date.class) {
-                        Method getTime = java.util.Date.class.getDeclaredMethod("getTime");
-                        method.invoke(pst, ++cont, new java.sql.Date((long) getTime.invoke(fieldGetter.invoke(obj))));
-                    } else {
-                        method.invoke(pst, ++cont, fieldGetter.invoke(obj));
+                    if (camposPk.contains(field) && (operacao == Operacao.UPDATE)) {
+                        continue;
                     }
+                    if (isCampoNulo(field, obj)) {
+                        if (isNotNull(field)) {
+                            throw new Exception("Campo nulo: [" + field.getName() + "]");
+                        } else {
+                            continue;
+                        }
+                    }
+
+                    setParameter(field, obj, pst, ++cont);
+                }
+            }
+            if (operacao == Operacao.UPDATE) {
+                for (Field field : camposPk) {
+                    setParameter(field, obj, pst, ++cont);
                 }
             }
         }
+    }
 
-        if (operacao == Operacao.UPDATE) {
-            Field campoId = getCampoId(obj.getClass());
-            Class<?> classeId = campoId.getType();
-
-            classeId = ajustaTipoClasse(classeId);
-
-            Method getter = objClass.getDeclaredMethod(getNomeGetter(campoId));
-            Class[] parametrosSetter = new Class[]{Integer.TYPE, classeId};
-            Method pstSetter = PreparedStatement.class.getDeclaredMethod(getNomeSetter(classeId), parametrosSetter);
-            pstSetter.invoke(pst, ++cont, getter.invoke(obj));
+    private void setParameter(Field field, T obj, PreparedStatement pst, int pos) throws SecurityException, InvocationTargetException, NoSuchMethodException, IllegalAccessException, IllegalArgumentException {
+        Object fkObj = null;
+        Class<?> fieldClass = field.getType();
+        Method fieldGetter = obj.getClass().getDeclaredMethod(getNomeGetter(field));
+        if (isForeignKey(field)) {
+            fkObj = fieldGetter.invoke(obj);
+            Method getFkId = fkObj.getClass().getDeclaredMethod(getNomeGetterId(fkObj));
+            fieldClass = getFkId.invoke(fkObj).getClass();
+            fieldGetter = getFkId;
+        }
+        fieldClass = ajustaTipoClasse(fieldClass);
+        Class[] parametrosSetter = new Class[]{Integer.TYPE, fieldClass};
+        String nomeClasse = ClasseUtil.getNomeClasse(fieldClass);
+        if (nomeClasse.equals("Integer")) {
+            nomeClasse = "Int";
+        }
+        String setterName = "set" + nomeClasse;
+        Method method = PreparedStatement.class.getDeclaredMethod(setterName, parametrosSetter);
+        if (isForeignKey(field)) {
+            method.invoke(pst, pos, fieldGetter.invoke(fkObj));
+        } else {
+            if (fieldClass == java.sql.Date.class) {
+                Method getTime = java.util.Date.class.getDeclaredMethod("getTime");
+                method.invoke(pst, pos, new java.sql.Date((long) getTime.invoke(fieldGetter.invoke(obj))));
+            } else {
+                method.invoke(pst, pos, fieldGetter.invoke(obj));
+            }
         }
     }
 

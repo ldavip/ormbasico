@@ -29,6 +29,17 @@ public class TabelaUtil {
         getterName.append(ajustaCamelCase(field.getName()));
         return getterName.toString();
     }
+    
+    public static String getNomeGetter(Class classe) {
+        StringBuilder getterName = new StringBuilder();
+        if (classe.getName().toLowerCase().contains("boolean")) {
+            getterName.append("is");
+        } else {
+            getterName.append("get");
+        }
+        getterName.append(ajustaCamelCase(classe.getName()));
+        return getterName.toString();
+    }
 
     public static String getNomeSetter(Field field) {
         return "set" + ajustaCamelCase(field.getName());
@@ -106,7 +117,7 @@ public class TabelaUtil {
         return valor == null;
     }
 
-    public static String[] getNomeCampos(Object obj, Dao.Operacao operacao) throws Exception {
+    public static String[] getNomeCamposInsert(Object obj, Dao.Operacao operacao) throws Exception {
         List<String> campos = new ArrayList<>();
         for (Field field : obj.getClass().getDeclaredFields()) {
             if (isColuna(field)) {
@@ -127,6 +138,9 @@ public class TabelaUtil {
         for (Field field : classe.getDeclaredFields()) {
             if (isColuna(field)) {
                 if (isAutoIncrement(field) && (operacao == Dao.Operacao.INSERT || operacao == Dao.Operacao.UPDATE)) {
+                    continue;
+                }
+                if (isPrimaryKey(field) && operacao == Dao.Operacao.UPDATE) {
                     continue;
                 }
                 campos.add(nomeTabela + "." + getNomeColuna(field));
@@ -157,9 +171,31 @@ public class TabelaUtil {
         }
         throw new RuntimeException("Nenhum campo do tipo Primary Key encontrado na classe: [" + classe.getName() + "]");
     }
+    
+    public static Field[] getCamposId(Class<?> classe) {
+        List<Field> campos = new ArrayList<>();
+        for (Field field : classe.getDeclaredFields()) {
+            if (isPrimaryKey(field)) {
+                 campos.add(field);
+            }
+        }
+        if (campos.isEmpty()) {
+            throw new RuntimeException("Nenhum campo do tipo Primary Key encontrado na classe: [" + classe.getName() + "]");
+        }
+        return campos.toArray(new Field[]{});
+    }
 
     public static String getNomeCampoId(Class<?> classeDaEntidade) {
         return getNomeColuna(getCampoId(classeDaEntidade));
+    }
+    
+    public static String[] getNomesCamposId(Class<?> classeDaEntidade) {
+        List<String> nomes = new ArrayList<>();
+        Field[] camposId = getCamposId(classeDaEntidade);
+        for (Field field : camposId) {
+            nomes.add(getNomeColuna(field));
+        }
+        return nomes.toArray(new String[]{});
     }
 
     public static Coluna getColuna(Field field) {
@@ -202,5 +238,18 @@ public class TabelaUtil {
             throw new IllegalArgumentException("Atributo: " + atributo
                     + " não encontrado na classe: " + classe.getName());
         }
+    }
+    
+    public static Field getCampoAutoIncrement(Class classe) throws Exception {
+        for (Field field : classe.getDeclaredFields()) {
+            if (isAutoIncrement(field)) {
+                if (TabelaUtil.isPrimaryKey(field)) {
+                    return field;
+                } else {
+                    throw new Exception("O campo: [" + field.getName() + "] é Auto Increment mas não é chave!");
+                }
+            }
+        }
+        return null;
     }
 }
