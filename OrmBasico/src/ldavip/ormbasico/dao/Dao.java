@@ -2,15 +2,17 @@ package ldavip.ormbasico.dao;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import ldavip.ormbasico.annotation.CampoEnum;
+import ldavip.ormbasico.exception.NotNullException;
 import ldavip.ormbasico.query.Operador;
 import ldavip.ormbasico.util.ClasseUtil;
 import ldavip.ormbasico.util.TabelaUtil;
@@ -31,6 +33,7 @@ import ldavip.ormbasico.util.TextoUtil;
 import static ldavip.ormbasico.util.TextoUtil.ajustaCamelCase;
 import static ldavip.ormbasico.util.TabelaUtil.getNomeCamposInsert;
 import static ldavip.ormbasico.util.TabelaUtil.getNomeCampos;
+import static ldavip.ormbasico.util.TabelaUtil.isIgnore;
 
 /**
  *
@@ -110,7 +113,6 @@ public abstract class Dao<T> {
             
             setIdObjeto(obj);
             
-            this.conexao.commit();
         } catch (Exception e) {
             this.conexao.rollback();
             e.printStackTrace();
@@ -192,7 +194,7 @@ public abstract class Dao<T> {
             this.conexao.setAutoCommit(false);
             setParameters(pst, obj);
             pst.executeUpdate();
-            this.conexao.commit();
+
         } catch (Exception e) {
             this.conexao.rollback();
             e.printStackTrace();
@@ -223,7 +225,7 @@ public abstract class Dao<T> {
             setParameters(pst, obj);
 
             pst.executeUpdate();
-            this.conexao.commit();
+
         } catch (Exception e) {
             this.conexao.rollback();
             e.printStackTrace();
@@ -547,6 +549,9 @@ public abstract class Dao<T> {
             int cont = 0;
             for (Field field : obj.getClass().getDeclaredFields()) {
                 if (isColuna(field)) {
+                    if (isIgnore(field, operacao)) {
+                        continue;
+                    }
                     if (isAutoIncrement(field) && (operacao == Operacao.INSERT || operacao == Operacao.UPDATE)) {
                         continue;
                     }
@@ -555,7 +560,7 @@ public abstract class Dao<T> {
                     }
                     if (isCampoNulo(field, obj)) {
                         if (isNotNull(field)) {
-                            throw new Exception("Campo nulo: [" + field.getName() + "]");
+                            throw new NotNullException(field);
                         } else {
                             continue;
                         }
@@ -572,7 +577,7 @@ public abstract class Dao<T> {
         }
     }
 
-    private void setParameter(Field field, T obj, PreparedStatement pst, int pos) throws SecurityException, InvocationTargetException, NoSuchMethodException, IllegalAccessException, IllegalArgumentException {
+    private void setParameter(Field field, T obj, PreparedStatement pst, int pos) throws Exception {
         Object fkObj = null;
         Class<?> fieldClass = field.getType();
         Method fieldGetter = obj.getClass().getDeclaredMethod(getNomeGetter(field));
@@ -583,6 +588,13 @@ public abstract class Dao<T> {
             fieldGetter = getFkId;
         }
         fieldClass = ajustaTipoClasse(fieldClass);
+        if (ClasseUtil.isEnum(fieldClass)) {
+            CampoEnum campoEnum = TabelaUtil.getCampoEnum(field);
+            if (campoEnum == null) {
+                throw new Exception("Não definido o tipo de dado do campo Enum: [" + field.getName() + "]");
+            }
+            fieldClass = campoEnum.tipoDaColuna();
+        }
         Class[] parametrosSetter = new Class[]{Integer.TYPE, fieldClass};
         String nomeClasse = ClasseUtil.getNomeClasse(fieldClass);
         if (nomeClasse.equals("Integer")) {
@@ -597,7 +609,16 @@ public abstract class Dao<T> {
                 Method getTime = java.util.Date.class.getDeclaredMethod("getTime");
                 method.invoke(pst, pos, new java.sql.Date((long) getTime.invoke(fieldGetter.invoke(obj))));
             } else {
-                method.invoke(pst, pos, fieldGetter.invoke(obj));
+                Object valor = fieldGetter.invoke(obj);
+                if (ClasseUtil.isEnum(field.getType())) {
+                    CampoEnum campoEnum = TabelaUtil.getCampoEnum(field);
+                    if (campoEnum.tipoDaColuna() == int.class) {
+                        valor = ((Enum) valor).ordinal();
+                    } else {
+                        valor = valor.toString();
+                    }
+                }
+                method.invoke(pst, pos, valor);
             }
         }
     }
@@ -606,11 +627,23 @@ public abstract class Dao<T> {
         T obj = (T) classeDaEntidade.newInstance();
 
         for (Field campo : classeDaEntidade.getDeclaredFields()) {
+            if (isIgnore(campo, operacao)) {
+                continue;
+            }
             if (isColuna(campo)) {
                 Object objFk = null;
-
+                CampoEnum campoEnum = null;
+                boolean isEnum = false;
                 String nomeColuna = getNomeColuna(campo);
                 Class<?> classeCampo = campo.getType();
+                if (ClasseUtil.isEnum(campo.getType())) {
+                    isEnum = true;
+                    campoEnum = TabelaUtil.getCampoEnum(campo);
+                    if (campoEnum == null) {
+                        throw new Exception("Não definido o tipo de dado do campo Enum: [" + campo.getName() + "]");
+                    }
+                    classeCampo = campoEnum.tipoDaColuna();
+                }
                 Class[] parametrosGetter = new Class[]{String.class};
 
                 if (isForeignKey(campo)) {
@@ -639,13 +672,33 @@ public abstract class Dao<T> {
                     classeCampo = objFk.getClass();
                 }
 
-                Class[] parametrosSetter = new Class[]{classeCampo};
+                Class[] parametrosSetter = new Class[]{campo.getType()};
                 Method setter = classeDaEntidade.getDeclaredMethod(getNomeSetter(campo), parametrosSetter);
 
                 if (isForeignKey(campo)) {
                     setter.invoke(obj, objFk);
                 } else {
-                    setter.invoke(obj, getter.invoke(rs, nomeColuna));
+                    Object valor = getter.invoke(rs, nomeColuna);
+                    if (isEnum) {
+                        if (campoEnum.tipoDaColuna() == int.class) {
+                            Object[] values = campo.getType().getEnumConstants();
+                            valor = values[Integer.parseInt(String.valueOf(valor))];
+                        } else {
+                            boolean encontrado = false;
+                            Object[] enums = campo.getClass().getEnumConstants();
+                            for (Object aEnum : enums) {
+                                if (((Enum) aEnum).name().equals(valor)) {
+                                    encontrado = true;
+                                    valor = aEnum;
+                                    break;
+                                }
+                            }
+                            if (!encontrado) {
+                                throw new Exception("Valor para o Enum: [" + campo.getName() + "] não encontrado!");
+                            }
+                        }
+                    }
+                    setter.invoke(obj, valor);
                 }
             }
         }
@@ -668,4 +721,7 @@ public abstract class Dao<T> {
         return fieldClass;
     }
 
+    public void commit() throws SQLException {
+        conexao.commit();
+    }
 }

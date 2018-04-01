@@ -2,6 +2,7 @@ package ldavip.ormbasico.util;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.SQLException;
 import java.util.Map;
 
 /**
@@ -19,9 +20,11 @@ public class ConnectionFactory {
             
             Class.forName("com.mysql.jdbc.Driver");
             return DriverManager.getConnection(url, user, password);
-        } catch (Exception e) {
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException("Driver mysql não encontrado!");
+        } catch (SQLException e) {
             e.printStackTrace();
+            throw new RuntimeException(e.getMessage());
         }
-        return null;
     }
 }

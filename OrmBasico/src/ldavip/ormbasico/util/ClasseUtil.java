@@ -156,4 +156,8 @@ public abstract class ClasseUtil {
         }
         return nomeClasse;
     }
+    
+    public static boolean isEnum(Class classe) {
+        return classe instanceof Class && ((Class<?>)classe).isEnum();
+    }
 }

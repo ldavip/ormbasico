@@ -5,12 +5,16 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import ldavip.ormbasico.annotation.AutoIncrement;
+import ldavip.ormbasico.annotation.CampoEnum;
 import ldavip.ormbasico.annotation.Coluna;
 import ldavip.ormbasico.annotation.ForeignKey;
+import ldavip.ormbasico.annotation.Ignore;
 import ldavip.ormbasico.annotation.NotNull;
 import ldavip.ormbasico.annotation.PrimaryKey;
 import ldavip.ormbasico.annotation.Tabela;
 import ldavip.ormbasico.dao.Dao;
+import ldavip.ormbasico.dao.Dao.Operacao;
+import ldavip.ormbasico.exception.NotNullException;
 import static ldavip.ormbasico.util.TextoUtil.ajustaCamelCase;
 
 /**
@@ -114,17 +118,34 @@ public class TabelaUtil {
     public static boolean isCampoNulo(Field campo, Object obj) throws Exception {
         Method getter = obj.getClass().getDeclaredMethod(getNomeGetter(campo));
         Object valor = getter.invoke(obj);
+        if (valor != null && isForeignKey(campo)) {
+            Field[] camposIdFk = getCamposId(valor.getClass());
+            for (Field fieldFk : camposIdFk) {
+                if (isCampoNulo(fieldFk, valor)) {
+                    return true;
+                }
+            }
+        }
         return valor == null;
     }
 
     public static String[] getNomeCamposInsert(Object obj, Dao.Operacao operacao) throws Exception {
         List<String> campos = new ArrayList<>();
         for (Field field : obj.getClass().getDeclaredFields()) {
+            if (isIgnore(field, operacao)) {
+                continue;
+            }
             if (isColuna(field)) {
                 if (isAutoIncrement(field) && (operacao == Dao.Operacao.INSERT || operacao == Dao.Operacao.UPDATE)) {
                     continue;
                 }
-                if (!isCampoNulo(field, obj)) {
+                if (isCampoNulo(field, obj)) {
+                    if (isNotNull(field)) {
+                        throw new NotNullException(field);
+                    } else {
+                        continue;
+                    }
+                } else {
                     campos.add(getNomeColuna(field));
                 }
             }
@@ -137,6 +158,9 @@ public class TabelaUtil {
         List<String> campos = new ArrayList<>();
         for (Field field : classe.getDeclaredFields()) {
             if (isColuna(field)) {
+                if (isIgnore(field, operacao)) {
+                    continue;
+                }
                 if (isAutoIncrement(field) && (operacao == Dao.Operacao.INSERT || operacao == Dao.Operacao.UPDATE)) {
                     continue;
                 }
@@ -251,5 +275,21 @@ public class TabelaUtil {
             }
         }
         return null;
+    }
+    
+    public static boolean isIgnore(Field campo, Operacao operacao) {
+        if (campo.isAnnotationPresent(Ignore.class)) {
+            Ignore ignore = campo.getAnnotation(Ignore.class);
+            for (Operacao op : ignore.operacao()) {
+                if (op == operacao) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    
+    public static CampoEnum getCampoEnum(Field field) {
+        return field.getAnnotation(CampoEnum.class);
     }
 }
