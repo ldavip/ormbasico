@@ -210,7 +210,7 @@ public class TabelaUtil {
     }
 
     public static String getNomeCampoId(Class<?> classeDaEntidade) {
-        return getNomeTabela(classeDaEntidade) + "." + getNomeColuna(getCampoId(classeDaEntidade));
+        return getNomeColuna(getCampoId(classeDaEntidade));
     }
     
     public static String[] getNomesCamposId(Class<?> classeDaEntidade) {
