@@ -16,6 +16,7 @@ import ldavip.ormbasico.exception.NotNullException;
 import ldavip.ormbasico.query.Operador;
 import ldavip.ormbasico.util.ClasseUtil;
 import ldavip.ormbasico.util.TabelaUtil;
+import static ldavip.ormbasico.util.TabelaUtil.getCampoAutoIncrement;
 import static ldavip.ormbasico.util.TabelaUtil.getCampoId;
 import static ldavip.ormbasico.util.TabelaUtil.getCampoIdFk;
 import static ldavip.ormbasico.util.TabelaUtil.getNomeCampoId;
@@ -233,7 +234,7 @@ public abstract class Dao<T> {
         }
     }
     
-    public T buscaPorId(int id) throws Exception {
+    public T buscaPorId(Object id) throws Exception {
         this.operacao = Operacao.SELECT;
 
         String tabela = getNomeTabela(classeDaEntidade);
@@ -243,11 +244,30 @@ public abstract class Dao<T> {
         sql.append("SELECT ");
         sql.append(TextoUtil.agrupar(campos, ","));
         sql.append(" FROM ").append(tabela);
-        sql.append(" WHERE ").append(getNomeCampoId(classeDaEntidade)).append(" = ? ");
+        sql.append(" WHERE ");
+        Field field = getCampoAutoIncrement(classeDaEntidade);
+        if (field == null) {
+            field = getCampoId(classeDaEntidade);
+        }
+        sql.append(getNomeColuna(field));
+        sql.append(" = ? ");
 
         ResultSet rs = null;
         try (PreparedStatement pst = this.conexao.prepareStatement(sql.toString())) {
-            pst.setInt(1, id);
+            Field campoId = getCampoAutoIncrement(classeDaEntidade);
+            if (campoId == null) {
+                campoId = getCampoId(classeDaEntidade);
+            }
+            Class<?> fieldClass = campoId.getType();
+            fieldClass = ajustaTipoClasse(fieldClass);
+            Class[] parametrosSetter = new Class[]{Integer.TYPE, fieldClass};
+            String nomeClasse = ClasseUtil.getNomeClasse(fieldClass);
+            if (nomeClasse.equals("Integer")) {
+                nomeClasse = "Int";
+            }
+            String setterName = "set" + nomeClasse;
+            Method setter = PreparedStatement.class.getDeclaredMethod(setterName, parametrosSetter);
+            setter.invoke(pst, 1, id);
             rs = pst.executeQuery();
             if (rs.next()) {
                 return populaObjeto(rs);
@@ -668,7 +688,7 @@ public abstract class Dao<T> {
                     Constructor construtorDao = classeDao.getDeclaredConstructor(parametrosConstrutor);
                     Dao dao = (Dao) construtorDao.newInstance(this.conexao);
 
-                    objFk = dao.buscaPorId((int) getter.invoke(rs, nomeColuna));
+                    objFk = dao.buscaPorId(getter.invoke(rs, nomeColuna));
                     classeCampo = objFk.getClass();
                 }
 
@@ -685,9 +705,9 @@ public abstract class Dao<T> {
                             valor = values[Integer.parseInt(String.valueOf(valor))];
                         } else {
                             boolean encontrado = false;
-                            Object[] enums = campo.getClass().getEnumConstants();
+                            Object[] enums = campo.getType().getEnumConstants();
                             for (Object aEnum : enums) {
-                                if (((Enum) aEnum).name().equals(valor)) {
+                                if (((Enum) aEnum).name().toUpperCase().equals(String.valueOf(valor).toUpperCase())) {
                                     encontrado = true;
                                     valor = aEnum;
                                     break;
