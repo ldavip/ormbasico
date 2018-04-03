@@ -50,7 +50,7 @@ public class TabelaUtil {
     }
 
     public static String getNomeSetter(Class<?> classe) {
-        return "set" + ajustaCamelCase(classe.getName());
+        return "set" + ClasseUtil.getNomeClasse(classe);
     }
 
     public static String getNomeColuna(Class<?> classe, String atributo) {

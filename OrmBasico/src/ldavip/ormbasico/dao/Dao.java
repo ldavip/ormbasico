@@ -67,6 +67,7 @@ public abstract class Dao<T> {
 
     private final Class<?> classeDaEntidade;
     private List<Class<?>> classes = new ArrayList<>();
+    private List<Object> valoresFiltro = new ArrayList<>();
 
     private StringBuilder query;
     private StringBuilder join = new StringBuilder();
@@ -400,41 +401,36 @@ public abstract class Dao<T> {
                         throw new IllegalArgumentException("A quantidade de valores esperada era: 2!"
                                 + "\nQuantidade encontrada: " + valor.length);
                     }
-                    where.append(operador).append(" ")
-                            .append("'").append(valor[0]).append("'")
-                            .append(" AND ")
-                            .append("'").append(valor[1]).append("' ");
+                    valoresFiltro.add(valor[0]);
+                    valoresFiltro.add(valor[1]);
+                    
+                    where.append(operador).append(" ? AND ? ");
                     break;
                 case CONTEM:
                 case NAO_CONTEM:
                     String[] str = new String[valor.length];
-                    for (int i = 0; i < valor.length; i++) {
-                        str[i] = "'" + valor[i] + "'";
+                    Arrays.fill(str, "?");
+                    for (Object val : valor) {
+                        valoresFiltro.add(val);
                     }
-                    where.append(operador).append(" ")
-                            .append("(")
-                            .append(TextoUtil.agrupar(str, ","))
-                            .append(") ");
+                    
+                    where.append(operador).append(" (").append(TextoUtil.agrupar(str, ",")).append(") ");
                     break;
                 case SIMILAR:
                     if (valor.length != 1) {
                         throw new IllegalArgumentException("A quantidade de valores esperada era: 1!"
                                 + "\nQuantidade encontrada: " + valor.length);
                     }
-                    where.append(operador).append(" ")
-                            .append("'%")
-                            .append(valor[0])
-                            .append("%' ");
+                    valoresFiltro.add("%" + valor[0] + "%");
+                    where.append(operador).append(" ? ");
                     break;
                 default:
                     if (valor.length != 1) {
                         throw new IllegalArgumentException("A quantidade de valores esperada era: 1!"
                                 + "\nQuantidade encontrada: " + valor.length);
                     }
-                    where.append(operador)
-                            .append(" '")
-                            .append(valor[0])
-                            .append("' ");
+                    valoresFiltro.add(valor[0]);
+                    where.append(operador).append(" ? ");
                     break;
             }
         }
@@ -541,6 +537,7 @@ public abstract class Dao<T> {
         List<T> lista = new ArrayList<>();
         ResultSet rs = null;
         try (PreparedStatement pst = this.conexao.prepareStatement(sql.toString())) {
+            setParametrosFiltro(pst, valoresFiltro);
             rs = pst.executeQuery();
             while (rs.next()) {
                 lista.add(populaObjeto(rs));
@@ -553,8 +550,17 @@ public abstract class Dao<T> {
                 rs.close();
             }
         }
-
+        valoresFiltro.clear();
         return lista;
+    }
+    
+    private void setParametrosFiltro(PreparedStatement pst, List<Object> parametros) throws Exception {
+        int cont = 0;
+        for (Object parametro : parametros) {
+            Class classeParametro = ajustaTipoClasse(parametro.getClass());
+            Method setter = PreparedStatement.class.getDeclaredMethod(getNomeSetter(classeParametro), new Class[]{Integer.TYPE, classeParametro});
+            setter.invoke(pst, ++cont, parametro);
+        }
     }
 
     private void setParameters(PreparedStatement pst, T obj) throws Exception {

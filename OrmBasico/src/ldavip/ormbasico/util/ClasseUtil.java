@@ -150,11 +150,11 @@ public abstract class ClasseUtil {
     }
 
     public static String getNomeClasse(Class classe) {
-        String nomeClasse = ajustaCamelCase(classe.getName());
+        String nomeClasse = classe.getName();
         if (nomeClasse.contains(".")) {
             nomeClasse = nomeClasse.substring(nomeClasse.lastIndexOf(".") + 1);
         }
-        return nomeClasse;
+        return ajustaCamelCase(nomeClasse);
     }
     
     public static boolean isEnum(Class classe) {
