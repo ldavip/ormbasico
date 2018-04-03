@@ -492,6 +492,14 @@ public abstract class Dao<T> {
         
         return buscaLista(this.query.toString());
     }
+    
+    public T retornaPrimeiroObjeto() throws Exception {
+        List<T> lista = toList();
+        if (lista.isEmpty()) {
+            return null;
+        }
+        return lista.get(0);
+    }
 
     private void checkJoins() {
         if (classes.size() > 0) {
