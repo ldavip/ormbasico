@@ -62,7 +62,7 @@ public abstract class Dao<T> {
         }
     }
 
-    private Connection conexao;
+    protected Connection conexao;
     private Operacao operacao;
 
     private final Class<?> classeDaEntidade;
@@ -558,8 +558,21 @@ public abstract class Dao<T> {
                 rs.close();
             }
         }
-        valoresFiltro.clear();
+        finalizar();
         return lista;
+    }
+    
+    private void finalizar() {
+        operacao = null;
+        valoresFiltro.clear();
+        classes.clear();
+        query = new StringBuilder();
+        join = new StringBuilder();
+        where = new StringBuilder("\r\n WHERE 1 = 1 ");
+        orderBy = new StringBuilder();
+        queryIniciada = false;
+        orderByInserido = false;
+        direcaoOrderByInserido = false;
     }
     
     private void setParametrosFiltro(PreparedStatement pst, List<Object> parametros) throws Exception {
