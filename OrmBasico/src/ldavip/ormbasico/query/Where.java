@@ -7,6 +7,7 @@ import java.util.List;
  * 
  * @author Luis Davi
  */
+@Deprecated
 public class Where {
     
     private List<Expressao> expressoes;

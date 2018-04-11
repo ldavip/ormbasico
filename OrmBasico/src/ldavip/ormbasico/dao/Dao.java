@@ -15,6 +15,7 @@ import ldavip.ormbasico.annotation.CampoEnum;
 import ldavip.ormbasico.exception.NotNullException;
 import ldavip.ormbasico.query.Operador;
 import ldavip.ormbasico.util.ClasseUtil;
+import ldavip.ormbasico.util.ConnectionFactory;
 import ldavip.ormbasico.util.TabelaUtil;
 import static ldavip.ormbasico.util.TabelaUtil.getCampoAutoIncrement;
 import static ldavip.ormbasico.util.TabelaUtil.getCampoId;
@@ -62,6 +63,8 @@ public abstract class Dao<T> {
         }
     }
 
+    protected boolean isAutoClose = false;
+    protected boolean isAutoCommit = true;
     protected Connection conexao;
     private Operacao operacao;
 
@@ -78,14 +81,15 @@ public abstract class Dao<T> {
     private boolean orderByInserido = false;
     private boolean direcaoOrderByInserido = false;
 
-    private Dao() {
-        this.classeDaEntidade = (Class<T>) ((ParameterizedType) getClass().getGenericSuperclass())
-                .getActualTypeArguments()[0];
+    public Dao() {
+        this(ConnectionFactory.getConnection());
+        isAutoClose = true;
     }
 
     public Dao(Connection conexao) {
-        this();
         this.conexao = conexao;
+        this.classeDaEntidade = (Class<T>) ((ParameterizedType) getClass().getGenericSuperclass())
+                .getActualTypeArguments()[0];
     }
 
     public void insere(T obj) throws Exception {
@@ -108,17 +112,22 @@ public abstract class Dao<T> {
                 .append(")")
                 .toString();
 
-        try (PreparedStatement pst = this.conexao.prepareStatement(sql)) {
-            this.conexao.setAutoCommit(false);
+        abreConexao();
+        try (PreparedStatement pst = conexao.prepareStatement(sql)) {
+            conexao.setAutoCommit(false);
             setParameters(pst, obj);
             pst.executeUpdate();
             
             setIdObjeto(obj);
-            
+            if (isAutoCommit) {
+                conexao.commit();
+            }
         } catch (Exception e) {
-            this.conexao.rollback();
+            conexao.rollback();
             e.printStackTrace();
             throw e;
+        } finally {
+            fechaConexao();
         }
     }
     
@@ -192,15 +201,20 @@ public abstract class Dao<T> {
             }
         }
 
+        abreConexao();
         try (PreparedStatement pst = this.conexao.prepareStatement(sql.toString())) {
             this.conexao.setAutoCommit(false);
             setParameters(pst, obj);
             pst.executeUpdate();
-
+            if (isAutoCommit) {
+                this.conexao.commit();
+            }
         } catch (Exception e) {
             this.conexao.rollback();
             e.printStackTrace();
             throw e;
+        } finally {
+            fechaConexao();
         }
     }
     
@@ -220,18 +234,22 @@ public abstract class Dao<T> {
             }
         }
 
-        try {
+        abreConexao();
+        try (PreparedStatement pst = this.conexao.prepareStatement(sql.toString())) {
             this.conexao.setAutoCommit(false);
-            PreparedStatement pst = this.conexao.prepareStatement(sql.toString());
 
             setParameters(pst, obj);
 
             pst.executeUpdate();
-
+            if (isAutoCommit) {
+                this.conexao.commit();
+            }
         } catch (Exception e) {
             this.conexao.rollback();
             e.printStackTrace();
             throw e;
+        } finally {
+            fechaConexao();
         }
     }
     
@@ -253,6 +271,7 @@ public abstract class Dao<T> {
         sql.append(getNomeColuna(field));
         sql.append(" = ? ");
 
+        abreConexao();
         ResultSet rs = null;
         try (PreparedStatement pst = this.conexao.prepareStatement(sql.toString())) {
             Field campoId = getCampoAutoIncrement(classeDaEntidade);
@@ -280,6 +299,7 @@ public abstract class Dao<T> {
             if (rs != null) {
                 rs.close();
             }
+            fechaConexao();
         }
 
         return null;
@@ -298,6 +318,7 @@ public abstract class Dao<T> {
         sql.append(" ORDER BY ").append(getNomeCampoId(classeDaEntidade)).append(" DESC ");
         sql.append(" LIMIT 1 ");
 
+        abreConexao();
         ResultSet rs = null;
         try (PreparedStatement pst = this.conexao.prepareStatement(sql.toString())) {
             rs = pst.executeQuery();
@@ -311,6 +332,7 @@ public abstract class Dao<T> {
             if (rs != null) {
                 rs.close();
             }
+            fechaConexao();
         }
 
         return null;
@@ -543,6 +565,7 @@ public abstract class Dao<T> {
 
     private List<T> buscaLista(String sql) throws Exception {
         List<T> lista = new ArrayList<>();
+        abreConexao();
         ResultSet rs = null;
         try (PreparedStatement pst = this.conexao.prepareStatement(sql.toString())) {
             setParametrosFiltro(pst, valoresFiltro);
@@ -557,6 +580,7 @@ public abstract class Dao<T> {
             if (rs != null) {
                 rs.close();
             }
+            fechaConexao();
         }
         finalizar();
         return lista;
@@ -767,8 +791,31 @@ public abstract class Dao<T> {
         }
         return fieldClass;
     }
+    
+    public void setAutoCommit(boolean autoCommit) {
+        this.isAutoCommit = autoCommit;
+        if (conexao != null) {
+            try {
+                conexao.setAutoCommit(autoCommit);
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+            }
+        }
+    }
 
     public void commit() throws SQLException {
         conexao.commit();
+    }
+    
+    protected void fechaConexao() throws SQLException {
+        if (isAutoClose) {
+            conexao.close();
+        }
+    }
+
+    protected void abreConexao() {
+        if (isAutoClose) {
+            conexao = ConnectionFactory.getConnection();
+        }
     }
 }
