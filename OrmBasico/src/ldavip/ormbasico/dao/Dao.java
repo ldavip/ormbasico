@@ -116,6 +116,7 @@ public abstract class Dao<T> {
         try (PreparedStatement pst = conexao.prepareStatement(sql)) {
             conexao.setAutoCommit(false);
             setParameters(pst, obj);
+            System.out.println(pst);
             pst.executeUpdate();
             
             setIdObjeto(obj);
@@ -147,7 +148,7 @@ public abstract class Dao<T> {
         
         ResultSet rs = null;
         try (PreparedStatement pst = this.conexao.prepareStatement(sql.toString())) {
-            
+            System.out.println(pst);
             rs = pst.executeQuery();
             Object id = null;
             Class tipoCampo = ajustaTipoClasse(campoAutoIncrement.getType());
@@ -185,7 +186,7 @@ public abstract class Dao<T> {
 
         StringBuilder sql = new StringBuilder();
         sql.append("UPDATE ").append(tabela);
-        sql.append(" SET ");
+        sql.append(" SET ").append("\r\n ");
         for (int i = 0; i < campos.length; i++) {
             sql.append(campos[i]).append(" = ? ").append("\r\n ");
             if (i < campos.length - 1) {
@@ -205,6 +206,7 @@ public abstract class Dao<T> {
         try (PreparedStatement pst = this.conexao.prepareStatement(sql.toString())) {
             this.conexao.setAutoCommit(false);
             setParameters(pst, obj);
+            System.out.println(pst);
             pst.executeUpdate();
             if (isAutoCommit) {
                 this.conexao.commit();
@@ -225,7 +227,7 @@ public abstract class Dao<T> {
 
         StringBuilder sql = new StringBuilder();
         sql.append("DELETE FROM ").append(tabela);
-        sql.append(" WHERE ");
+        sql.append("\r\n").append(" WHERE ");
         String[] nomesCamposPk = TabelaUtil.getNomesCamposId(classeDaEntidade);
         for (int i = 0; i < nomesCamposPk.length; i++) {
             sql.append(nomesCamposPk[i]).append(" = ? ");
@@ -239,7 +241,7 @@ public abstract class Dao<T> {
             this.conexao.setAutoCommit(false);
 
             setParameters(pst, obj);
-
+            System.out.println(pst);
             pst.executeUpdate();
             if (isAutoCommit) {
                 this.conexao.commit();
@@ -261,14 +263,14 @@ public abstract class Dao<T> {
 
         StringBuilder sql = new StringBuilder();
         sql.append("SELECT ");
-        sql.append(TextoUtil.agrupar(campos, ","));
-        sql.append(" FROM ").append(tabela);
-        sql.append(" WHERE ");
+        sql.append("\r\n").append(TextoUtil.agrupar(campos, ", "));
+        sql.append("\r\n").append(" FROM ").append(tabela);
+        sql.append("\r\n").append(" WHERE ");
         Field field = getCampoAutoIncrement(classeDaEntidade);
         if (field == null) {
             field = getCampoId(classeDaEntidade);
         }
-        sql.append(getNomeColuna(field));
+        sql.append("\r\n").append(getNomeColuna(field));
         sql.append(" = ? ");
 
         abreConexao();
@@ -288,6 +290,7 @@ public abstract class Dao<T> {
             String setterName = "set" + nomeClasse;
             Method setter = PreparedStatement.class.getDeclaredMethod(setterName, parametrosSetter);
             setter.invoke(pst, 1, id);
+            System.out.println(pst);
             rs = pst.executeQuery();
             if (rs.next()) {
                 return populaObjeto(rs);
@@ -313,14 +316,15 @@ public abstract class Dao<T> {
 
         StringBuilder sql = new StringBuilder();
         sql.append("SELECT ");
-        sql.append(TextoUtil.agrupar(campos, ", "));
-        sql.append(" FROM ").append(tabela);
-        sql.append(" ORDER BY ").append(getNomeCampoId(classeDaEntidade)).append(" DESC ");
-        sql.append(" LIMIT 1 ");
+        sql.append("\r\n").append(TextoUtil.agrupar(campos, ", "));
+        sql.append("\r\n").append(" FROM ").append(tabela);
+        sql.append("\r\n").append(" ORDER BY ").append(getNomeCampoId(classeDaEntidade)).append(" DESC ");
+        sql.append("\r\n").append(" LIMIT 1 ");
 
         abreConexao();
         ResultSet rs = null;
         try (PreparedStatement pst = this.conexao.prepareStatement(sql.toString())) {
+            System.out.println(pst);
             rs = pst.executeQuery();
             if (rs.next()) {
                 return populaObjeto(rs);
@@ -345,8 +349,8 @@ public abstract class Dao<T> {
 
         this.query = new StringBuilder();
         this.query.append("SELECT ");
-        this.query.append(TextoUtil.agrupar(campos, ", "));
-        this.query.append("\r\n").append(" FROM ").append(tabela).append(" ");
+        this.query.append("\r\n ").append(TextoUtil.agrupar(campos, ", "));
+        this.query.append("\r\n ").append("FROM ").append(tabela).append(" ");
 
         queryIniciada = true;
         return this;
@@ -436,7 +440,7 @@ public abstract class Dao<T> {
                         valoresFiltro.add(val);
                     }
                     
-                    where.append(operador).append(" (").append(TextoUtil.agrupar(str, ",")).append(") ");
+                    where.append(operador).append(" (").append(TextoUtil.agrupar(str, ", ")).append(") ");
                     break;
                 case SIMILAR:
                     if (valor.length != 1) {
@@ -569,6 +573,7 @@ public abstract class Dao<T> {
         ResultSet rs = null;
         try (PreparedStatement pst = this.conexao.prepareStatement(sql.toString())) {
             setParametrosFiltro(pst, valoresFiltro);
+            System.out.println(pst);
             rs = pst.executeQuery();
             while (rs.next()) {
                 lista.add(populaObjeto(rs));
@@ -694,7 +699,7 @@ public abstract class Dao<T> {
         }
     }
 
-    private T populaObjeto(ResultSet rs) throws Exception {
+    protected T populaObjeto(ResultSet rs) throws Exception {
         T obj = (T) classeDaEntidade.newInstance();
 
         for (Field campo : classeDaEntidade.getDeclaredFields()) {

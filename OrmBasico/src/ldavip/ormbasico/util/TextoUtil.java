@@ -7,6 +7,9 @@ package ldavip.ormbasico.util;
 public class TextoUtil {
 
     public static String agrupar(String[] textos, String separador) {
+        if (textos == null || textos.length == 0) {
+            return "";
+        }
         StringBuilder sb = new StringBuilder();
         for (String texto : textos) {
             sb.append(texto).append(separador);
