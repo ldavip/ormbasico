@@ -141,10 +141,8 @@ public abstract class Dao<T> {
         
         String nomeCampoAutoIncrement = getNomeColuna(campoAutoIncrement);
         StringBuilder sql = new StringBuilder();
-        sql.append("SELECT ").append(nomeCampoAutoIncrement)
-                .append(" FROM ").append(getNomeTabela(classeDaEntidade))
-                .append(" ORDER BY ").append(nomeCampoAutoIncrement).append(" DESC ")
-                .append(" LIMIT 1 ");
+        sql.append("SELECT MAX(").append(nomeCampoAutoIncrement).append(") AS ").append(nomeCampoAutoIncrement)
+                .append(" FROM ").append(getNomeTabela(classeDaEntidade));
         
         ResultSet rs = null;
         try (PreparedStatement pst = this.conexao.prepareStatement(sql.toString())) {
@@ -314,12 +312,16 @@ public abstract class Dao<T> {
         String tabela = getNomeTabela(classeDaEntidade);
         String[] campos = getNomeCampos(classeDaEntidade, operacao);
 
+        String nomeCampoId = getNomeCampoId(classeDaEntidade);
         StringBuilder sql = new StringBuilder();
-        sql.append("SELECT ");
-        sql.append("\r\n").append(TextoUtil.agrupar(campos, ", "));
-        sql.append("\r\n").append(" FROM ").append(tabela);
-        sql.append("\r\n").append(" ORDER BY ").append(getNomeCampoId(classeDaEntidade)).append(" DESC ");
-        sql.append("\r\n").append(" LIMIT 1 ");
+        sql.append("\r\n ").append("SELECT ");
+        sql.append("\r\n ").append(TextoUtil.agrupar(campos, ", "));
+        sql.append("\r\n ").append("FROM ").append(tabela);
+        sql.append("\r\n ").append("WHERE ").append(nomeCampoId).append(" = ");
+        sql.append("\r\n ").append("(");
+        sql.append("\r\n ").append("   SELECT MAX(").append(nomeCampoId).append(") AS ").append(nomeCampoId);
+        sql.append("\r\n ").append("   FROM ").append(tabela);
+        sql.append("\r\n ").append(")");
 
         abreConexao();
         ResultSet rs = null;
@@ -342,17 +344,14 @@ public abstract class Dao<T> {
         return null;
     }
 
+    /**
+     * Use apenas o método <code>toList()</code>
+     * @see toList()
+     * @return
+     * @deprecated
+     */
+    @Deprecated
     public Dao buscaLista() {
-        this.operacao = Operacao.SELECT;
-        String tabela = getNomeTabela(classeDaEntidade);
-        String[] campos = getNomeCampos(classeDaEntidade, operacao);
-
-        this.query = new StringBuilder();
-        this.query.append("SELECT ");
-        this.query.append("\r\n ").append(TextoUtil.agrupar(campos, ", "));
-        this.query.append("\r\n ").append("FROM ").append(tabela).append(" ");
-
-        queryIniciada = true;
         return this;
     }
     
@@ -506,10 +505,22 @@ public abstract class Dao<T> {
         orderBy.append(" ").append(direcao).append(" ");
     }
 
+    /**
+     * Retorna uma lista com os objetos encontrados.
+     * @return
+     * @throws Exception 
+     */
     public List<T> toList() throws Exception {
-        if (!queryIniciada) {
-            throw new Exception("Busca incompleta! [O método: buscaLista() não foi utilizado!]");
-        }
+        this.operacao = Operacao.SELECT;
+        String tabela = getNomeTabela(classeDaEntidade);
+        String[] campos = getNomeCampos(classeDaEntidade, operacao);
+
+        this.query = new StringBuilder();
+        this.query.append("SELECT ");
+        this.query.append("\r\n ").append(TextoUtil.agrupar(campos, ", "));
+        this.query.append("\r\n ").append("FROM ").append(tabela).append(" ");
+
+        queryIniciada = true;
         
         checkJoins();
         this.query.append(join);

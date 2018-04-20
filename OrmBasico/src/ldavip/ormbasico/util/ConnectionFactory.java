@@ -17,11 +17,25 @@ public class ConnectionFactory {
             String url = config.get("url");
             String user = config.get("user");
             String password = config.get("password");
+            String database = config.get("database");
+            if (database == null || database.isEmpty()) {
+                throw new IllegalArgumentException("O banco de dados utilizado não foi especificado!");
+            }
             
-            Class.forName("com.mysql.jdbc.Driver");
-            return DriverManager.getConnection(url, user, password);
+            if (database.toLowerCase().equals("sqlserver")) {
+                String strCon = config.get("sqlserverConnectionString");
+                if (strCon == null || strCon.isEmpty()) {
+                    throw new IllegalArgumentException("O banco de dados especificado foi o SQLServer mas não foi especificada a string de conexão!");
+                }
+                Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
+                return DriverManager.getConnection(strCon);
+            } else if (database.toLowerCase().equals("mysql")) {
+                Class.forName("com.mysql.jdbc.Driver");
+                return DriverManager.getConnection(url, user, password);
+            }
+            return null;
         } catch (ClassNotFoundException e) {
-            throw new IllegalStateException("Driver mysql não encontrado!");
+            throw new IllegalStateException("Driver não encontrado!");
         } catch (SQLException e) {
             e.printStackTrace();
             throw new RuntimeException(e.getMessage());
