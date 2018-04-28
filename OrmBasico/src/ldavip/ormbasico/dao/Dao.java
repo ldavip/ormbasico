@@ -84,10 +84,18 @@ public abstract class Dao<T> {
     public Dao() {
         this(ConnectionFactory.getConnection());
         isAutoClose = true;
+        isAutoCommit = true;
     }
 
     public Dao(Connection conexao) {
+        isAutoClose = false;
+        isAutoCommit = false;
         this.conexao = conexao;
+        try {
+            this.conexao.setAutoCommit(false);
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+        }
         this.classeDaEntidade = (Class<T>) ((ParameterizedType) getClass().getGenericSuperclass())
                 .getActualTypeArguments()[0];
     }
@@ -101,6 +109,7 @@ public abstract class Dao<T> {
         Arrays.fill(parametros, "?");
 
         String sql = new StringBuilder()
+                .append("\r\n")
                 .append("INSERT INTO ").append(tabela)
                 .append(" (")
                 .append(TextoUtil.agrupar(campos, ", "))
@@ -141,8 +150,9 @@ public abstract class Dao<T> {
         
         String nomeCampoAutoIncrement = getNomeColuna(campoAutoIncrement);
         StringBuilder sql = new StringBuilder();
-        sql.append("SELECT MAX(").append(nomeCampoAutoIncrement).append(") AS ").append(nomeCampoAutoIncrement)
-                .append(" FROM ").append(getNomeTabela(classeDaEntidade));
+        sql.append("\r\n").append("SELECT MAX(").append(nomeCampoAutoIncrement)
+                .append(") AS ").append(nomeCampoAutoIncrement)
+                .append("\r\n").append(" FROM ").append(getNomeTabela(classeDaEntidade));
         
         ResultSet rs = null;
         try (PreparedStatement pst = this.conexao.prepareStatement(sql.toString())) {
@@ -183,8 +193,8 @@ public abstract class Dao<T> {
         Arrays.fill(parametros, "?");
 
         StringBuilder sql = new StringBuilder();
-        sql.append("UPDATE ").append(tabela);
-        sql.append(" SET ").append("\r\n ");
+        sql.append("\r\n").append("UPDATE ").append(tabela).append(" SET ")
+                .append("\r\n   ");
         for (int i = 0; i < campos.length; i++) {
             sql.append(campos[i]).append(" = ? ").append("\r\n ");
             if (i < campos.length - 1) {
@@ -224,7 +234,7 @@ public abstract class Dao<T> {
         String tabela = getNomeTabela(classeDaEntidade);
 
         StringBuilder sql = new StringBuilder();
-        sql.append("DELETE FROM ").append(tabela);
+        sql.append("\r\n").append("DELETE FROM ").append(tabela);
         sql.append("\r\n").append(" WHERE ");
         String[] nomesCamposPk = TabelaUtil.getNomesCamposId(classeDaEntidade);
         for (int i = 0; i < nomesCamposPk.length; i++) {
@@ -260,7 +270,7 @@ public abstract class Dao<T> {
         String[] campos = getNomeCampos(classeDaEntidade, operacao);
 
         StringBuilder sql = new StringBuilder();
-        sql.append("SELECT ");
+        sql.append("\r\n").append("SELECT ");
         sql.append("\r\n").append(TextoUtil.agrupar(campos, ", "));
         sql.append("\r\n").append(" FROM ").append(tabela);
         sql.append("\r\n").append(" WHERE ");
@@ -516,7 +526,7 @@ public abstract class Dao<T> {
         String[] campos = getNomeCampos(classeDaEntidade, operacao);
 
         this.query = new StringBuilder();
-        this.query.append("SELECT ");
+        this.query.append("\r\n ").append("SELECT ");
         this.query.append("\r\n ").append(TextoUtil.agrupar(campos, ", "));
         this.query.append("\r\n ").append("FROM ").append(tabela).append(" ");
 
@@ -645,7 +655,7 @@ public abstract class Dao<T> {
                     if (camposPk.contains(field) && (operacao == Operacao.UPDATE)) {
                         continue;
                     }
-                    if (isCampoNulo(field, obj)) {
+                    if (isCampoNulo(field, obj) && operacao == Operacao.INSERT) {
                         if (isNotNull(field)) {
                             throw new NotNullException(field);
                         } else {
@@ -693,8 +703,12 @@ public abstract class Dao<T> {
             method.invoke(pst, pos, fieldGetter.invoke(fkObj));
         } else {
             if (fieldClass == java.sql.Date.class) {
-                Method getTime = java.util.Date.class.getDeclaredMethod("getTime");
-                method.invoke(pst, pos, new java.sql.Date((long) getTime.invoke(fieldGetter.invoke(obj))));
+                try {
+                    Method getTime = java.util.Date.class.getDeclaredMethod("getTime");
+                    method.invoke(pst, pos, new java.sql.Date((long) getTime.invoke(fieldGetter.invoke(obj))));
+                } catch (NullPointerException e) {
+                    method.invoke(pst, pos, null);
+                }
             } else {
                 Object valor = fieldGetter.invoke(obj);
                 if (ClasseUtil.isEnum(field.getType())) {
