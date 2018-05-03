@@ -19,7 +19,7 @@ public abstract class ClasseUtil {
             if (caminhos.length < 2) {
                 throw new IllegalArgumentException("Erro de sintaxe no atributo: " + atributo + "! - Esperado: NomeDaClasse.nomeDoAtributo!");
             }
-            String pacoteModel = LeitorXML.getValor("pacote-model", "ormbasico-config.xml");
+            String pacoteModel = Config.getProperty("pacote.model");
             if (pacoteModel == null || pacoteModel.isEmpty()) {
                 throw new IllegalStateException("Pacote do Model não encontrado!");
             }
@@ -38,7 +38,7 @@ public abstract class ClasseUtil {
             if (caminhos.length < 2) {
                 throw new IllegalArgumentException("Erro de sintaxe no atributo: " + atributo + "! - Esperado: NomeDaClasse.nomeDoAtributo!");
             }
-            String pacoteModel = LeitorXML.getValor("pacote-model", "ormbasico-config.xml");
+            String pacoteModel = Config.getProperty("pacote.model");
             if (pacoteModel == null || pacoteModel.isEmpty()) {
                 throw new IllegalStateException("Pacote do Model não encontrado!");
             }
@@ -79,7 +79,7 @@ public abstract class ClasseUtil {
             if (caminhos.length < 2) {
                 throw new IllegalArgumentException("Erro de sintaxe no atributo: " + atributo + "! - Esperado: NomeDaClasse.nomeDoAtributo!");
             }
-            String pacoteModel = LeitorXML.getValor("pacote-model", "ormbasico-config.xml");
+            String pacoteModel = Config.getProperty("pacote.model");
             if (pacoteModel == null || pacoteModel.isEmpty()) {
                 throw new IllegalStateException("Pacote do Model não encontrado!");
             }
@@ -117,7 +117,7 @@ public abstract class ClasseUtil {
                 if (caminhos.length < 2) {
                     throw new IllegalArgumentException("Erro de sintaxe no atributo: " + atributo + "! - Esperado: NomeDaClasse.nomeDoAtributo!");
                 }
-                String pacoteModel = LeitorXML.getValor("pacote-model", "ormbasico-config.xml");
+                String pacoteModel = Config.getProperty("pacote.model");
                 if (pacoteModel == null || pacoteModel.isEmpty()) {
                     throw new IllegalStateException("Pacote do Model não encontrado!");
                 }

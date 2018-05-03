@@ -16,6 +16,7 @@ import ldavip.ormbasico.dao.Dao;
 import ldavip.ormbasico.dao.Dao.Operacao;
 import ldavip.ormbasico.exception.NotNullException;
 import static ldavip.ormbasico.util.TextoUtil.ajustaCamelCase;
+import ldavip.ormbasico.annotation.Data;
 
 /**
  *
@@ -229,6 +230,10 @@ public class TabelaUtil {
     public static Tabela getTabela(Class<?> classe) {
         return classe.getAnnotation(Tabela.class);
     }
+    
+    public static Data getData(Class<?> classe) {
+        return classe.getAnnotation(Data.class);
+    }
 
     public static boolean isTabela(Class<?> classe) {
         return classe.isAnnotationPresent(Tabela.class);
@@ -253,6 +258,10 @@ public class TabelaUtil {
     public static boolean isNotNull(Field field) {
         return field.isAnnotationPresent(NotNull.class)
                 || field.isAnnotationPresent(PrimaryKey.class);
+    }
+    
+    public static boolean isData(Field field) {
+        return field.isAnnotationPresent(Data.class);
     }
 
     public static void checaAtributo(String atributo, Class<?> classe) {

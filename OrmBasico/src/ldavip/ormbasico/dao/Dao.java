@@ -36,6 +36,8 @@ import static ldavip.ormbasico.util.TextoUtil.ajustaCamelCase;
 import static ldavip.ormbasico.util.TabelaUtil.getNomeCamposInsert;
 import static ldavip.ormbasico.util.TabelaUtil.getNomeCampos;
 import static ldavip.ormbasico.util.TabelaUtil.isIgnore;
+import ldavip.ormbasico.annotation.Data;
+import static ldavip.ormbasico.util.TabelaUtil.isData;
 
 /**
  *
@@ -779,7 +781,17 @@ public abstract class Dao<T> {
                 if (isForeignKey(campo)) {
                     setter.invoke(obj, objFk);
                 } else {
-                    Object valor = getter.invoke(rs, nomeColuna);
+                    Object valor = null;
+                    try {
+                        if (isData(campo)) {
+                            Data data = TabelaUtil.getData(classeCampo);
+                            String strDate = rs.getString(nomeColuna);
+                            valor = new java.text.SimpleDateFormat(data.formato()).parse(strDate);
+                        } else {
+                            valor = getter.invoke(rs, nomeColuna);
+                        }
+                    } catch (Exception e) {
+                    }
                     if (isEnum) {
                         if (campoEnum.tipoDaColuna() == int.class) {
                             Object[] values = campo.getType().getEnumConstants();

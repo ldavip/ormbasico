@@ -1,6 +1,6 @@
 package ldavip.ormbasico.dao;
 
-import ldavip.ormbasico.util.LeitorXML;
+import ldavip.ormbasico.util.Config;
 
 /**
  *
@@ -9,7 +9,7 @@ import ldavip.ormbasico.util.LeitorXML;
 public class DaoFactory {
     
     public static Class<?> getClasseDao(Class<?> classe) {
-        String pacote = LeitorXML.getValor("pacote-dao", "ormbasico-config.xml");
+        String pacote = Config.getProperty("pacote.dao");
         String nomeClasse = classe.getName().substring(classe.getName().lastIndexOf(".") + 1);
         String dao = pacote + "." + nomeClasse + "Dao";
         try {
