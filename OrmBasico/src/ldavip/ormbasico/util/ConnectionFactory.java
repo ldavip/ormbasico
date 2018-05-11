@@ -1,6 +1,5 @@
 package ldavip.ormbasico.util;
 
-import java.io.FileInputStream;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
@@ -14,13 +13,7 @@ public class ConnectionFactory {
     
     public static Connection getConnection() {
         try {
-            Properties config = new Properties();
-            try (FileInputStream fis = new FileInputStream("ormbasico.properties")) {
-                config.load(fis);
-            } catch (Exception e) {
-                e.printStackTrace();
-                throw new RuntimeException("Arquivo de configuração [ormbasico.properties] não encontrado!");
-            }
+            Properties config = Config.getProperties();
             
             String database = config.getProperty("database");
             if (database == null || database.isEmpty()) {
@@ -35,6 +28,8 @@ public class ConnectionFactory {
                 Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
             } else if (database.toLowerCase().equals("mysql")) {
                 Class.forName("com.mysql.jdbc.Driver");
+            } else if (database.toLowerCase().equals("h2")) {
+                Class.forName("org.h2.Driver");
             } else if (database.toLowerCase().equals("sqlite")) {
                 Class.forName("org.sqlite.JDBC");
                 return DriverManager.getConnection(strCon);
